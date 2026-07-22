@@ -176,9 +176,29 @@
         {#if hovered.isMerge}<span class="text-neutral-400">· merge</span>{/if}
       </div>
       <div class="mt-1 font-medium">{hovered.subject}</div>
-      <div class="mt-0.5 text-neutral-500">
-        {hovered.author} · {new Date(hovered.committedAt).toLocaleString()}
-        {#if hovered.prNum}· PR #{hovered.prNum}{/if}
+      <div class="mt-0.5 text-neutral-500 flex items-center gap-1.5 flex-wrap">
+        <span>{hovered.author} · {new Date(hovered.committedAt).toLocaleString()}</span>
+        {#if hovered.prNum}<span>· PR #{hovered.prNum}</span>{/if}
+        {#if hovered.mergeMethod}
+          <span
+            class="px-1 rounded text-[10px] font-semibold"
+            class:bg-purple-100={hovered.mergeMethod === 'squash'}
+            class:text-purple-700={hovered.mergeMethod === 'squash'}
+            class:bg-blue-100={hovered.mergeMethod === 'merge'}
+            class:text-blue-700={hovered.mergeMethod === 'merge'}
+          >{hovered.mergeMethod}</span>
+        {/if}
+        {#if hovered.ciState}
+          <span
+            class="px-1 rounded text-[10px] font-semibold"
+            class:bg-green-100={hovered.ciState === 'SUCCESS'}
+            class:text-green-700={hovered.ciState === 'SUCCESS'}
+            class:bg-red-100={hovered.ciState === 'FAILURE'}
+            class:text-red-700={hovered.ciState === 'FAILURE'}
+            class:bg-amber-100={hovered.ciState !== 'SUCCESS' && hovered.ciState !== 'FAILURE'}
+            class:text-amber-700={hovered.ciState !== 'SUCCESS' && hovered.ciState !== 'FAILURE'}
+          >CI {hovered.ciState.toLowerCase()}</span>
+        {/if}
       </div>
       <div class="mt-1 text-neutral-500">
         <span class="text-neutral-400">tags:</span>

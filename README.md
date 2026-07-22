@@ -39,10 +39,12 @@ raw CSV(사실) → 온톨로지(파생 관계) → JSON(렌더) + SQLite(질의
 make build                                            # bin/gbg 빌드
 ./bin/gbg ingest https://github.com/<org>/<repo>      # 원격 (clone→raw→ontology)
 ./bin/gbg ingest /path/to/repo --default-branch dev   # 로컬
+./bin/gbg ingest /path/to/repo --repo owner/name      # 로컬 경로의 링크·enrich 타깃 교정
 ./bin/gbg ontology data/<run-dir>                     # raw/*.csv 로 graph.* 재계산
 ./bin/gbg serve --web-dir web/dist                    # HTTP API + SPA 호스팅(:8080)
+# enrich: env GITHUB_TOKEN 또는 `gh auth token` 자동 사용, 없으면 오프라인 분류만 (--no-enrich 로 강제 스킵)
 # 산출: data/<org>__<repo>__<branch>__<sha7>/
-#   raw/{commits,edges,refs}.csv   graph.json(렌더)   graph.sqlite(질의)   meta.json
+#   raw/{commits,edges,refs,prs}.csv   graph.json(렌더)   graph.sqlite(질의)   meta.json
 
 # --- 프론트 (Svelte, web/) ---
 cd web && npm install
@@ -53,6 +55,8 @@ npm run build    # web/dist 생성 → gbg serve --web-dir web/dist
 ## 상태
 - **M1 Extract — ✅ 완료.** bare+blobless clone → git 1-pass → raw CSV, content-address 캐시.
 - **M2 Ontology — ✅ 완료.** 위상 레인 + 색 규칙 + 비트셋 containment → graph.json + graph.sqlite. 14,520노드/17,400엣지.
-- **M3 GUI — ✅ 완료.** `gbg serve`(Go) + Svelte SPA(SVG 스윔레인, 호버·GitHub 링크·뷰포트 가상화). JS 49KB.
-  - 이월: 스쿼시/체리픽 edge_type(M4, PR API), graph.sqlite 정수 id 정규화(M4).
-- 다음: **M4 Enrich + 질의 UI** — GitHub PR/CI 보강, 병합방식 판별, 역질의 패널.
+- **M3 GUI — ✅ 완료.** `gbg serve`(Go) + Svelte SPA(SVG 스윔레인, 호버·GitHub 링크·뷰포트 가상화).
+- **M4 Enrich + 질의 UI — ✅ 완료.** 오프라인 squash/merge 분류(점선 엣지) + GitHub PR/CI enrich(`gh` 토큰) +
+  역질의 패널(Release diff / PRs by method) + 병합방식·CI 배지. JS 56KB.
+  - 잔여(선택): 체리픽 판별(patch-id/blob 필요), graph.sqlite 정수 id 정규화(서버사이드 질의라 비긴급).
+- 다음: **M5 마감** — 원격 URL 회귀, 성능, embed.FS 단일 바이너리 패키징.

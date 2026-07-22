@@ -12,8 +12,10 @@ import (
 	"github.com/wm-it-25/git-branch-graph/internal/model"
 )
 
-// Build computes the full graph from the raw layer.
-func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge) model.Graph {
+// Build computes the full graph from the raw layer. enriched carries optional PR
+// data keyed by PR number (nil when enrich did not run); it refines the offline
+// merge/squash classification.
+func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR) model.Graph {
 	linkBase := fmt.Sprintf("https://github.com/%s/%s", snap.Ref.Org, snap.Ref.Repo)
 
 	// Index and derived maps.
@@ -60,6 +62,9 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 
 	containment := computeContainment(order, parentsOf, refs)
 
+	// PR merge/squash classification (offline + optional enrich override).
+	prs, methodOf, ciOf, squashEdges := classifyPRs(commits, commitOf, firstParent, branchOf, linkBase, enriched)
+
 	// Lightweight per-node branch containment (JSON-inlined; tags stay in SQLite).
 	branchContain := make(map[string][]string, len(commits))
 	for sha, list := range containment {
@@ -96,6 +101,8 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 			CommittedAt:       c.CommittedAt,
 			PRNum:             c.PRNum,
 			IsMerge:           c.IsMerge,
+			MergeMethod:       methodOf[sha],
+			CIState:           ciOf[sha],
 			BranchOf:          bo,
 			Refs:              refsAt[sha],
 			ContainedBranches: branchContain[sha],
@@ -103,17 +110,21 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 		})
 	}
 
-	// Edges with resolved lane endpoints.
+	// Edges with resolved lane endpoints; mark squash landing edges.
 	gedges := make([]model.GEdge, 0, len(edges))
 	for _, e := range edges {
 		if !inSet[e.Child] || !inSet[e.Parent] {
 			continue
 		}
+		et := e.Type
+		if squashEdges[e.Child+"|"+e.Parent] {
+			et = "squash"
+		}
 		gedges = append(gedges, model.GEdge{
 			Child:       e.Child,
 			Parent:      e.Parent,
 			ParentIndex: e.ParentIndex,
-			Type:        e.Type,
+			Type:        et,
 			FromLane:    laneOf[e.Child],
 			ToLane:      laneOf[e.Parent],
 		})
@@ -124,6 +135,7 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 		LinkBase:    linkBase,
 		Nodes:       nodes,
 		Edges:       gedges,
+		PRs:         prs,
 		Containment: containment,
 	}
 }

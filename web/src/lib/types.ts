@@ -32,6 +32,8 @@ export interface GraphNode {
   committedAt: string
   prNum?: string
   isMerge: boolean
+  mergeMethod?: string
+  ciState?: string
   branchOf?: string
   refs?: NodeRef[]
   containedBranches?: string[]

@@ -124,6 +124,34 @@ func Write(path string, g model.Graph, refs []model.Ref, edges []model.Edge) (co
 	}
 	rst.Close()
 
+	// prs (offline-classified + optional enrich)
+	pst, err := tx.Prepare(`INSERT OR REPLACE INTO prs
+		(pr_num,state,merge_method,merge_sha,base_ref,head_ref,url) VALUES (?,?,?,?,?,?,?)`)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range g.PRs {
+		if _, err = pst.Exec(nullInt(p.Num), nullStr(p.State), nullStr(p.MergeMethod),
+			nullStr(p.MergeSHA), nullStr(p.BaseRef), nullStr(p.HeadRef), nullStr(p.URL)); err != nil {
+			return 0, err
+		}
+	}
+	pst.Close()
+
+	// checks (PR CI rollup, when enrich supplied it)
+	kst, err := tx.Prepare(`INSERT OR IGNORE INTO checks (sha,context,state,url) VALUES (?,?,?,?)`)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range g.PRs {
+		if p.CIState != "" && p.MergeSHA != "" {
+			if _, err = kst.Exec(p.MergeSHA, "rollup", p.CIState, p.URL); err != nil {
+				return 0, err
+			}
+		}
+	}
+	kst.Close()
+
 	// containment (the large table)
 	tst, err := tx.Prepare(`INSERT OR IGNORE INTO containment (sha,ref_name,ref_type) VALUES (?,?,?)`)
 	if err != nil {
