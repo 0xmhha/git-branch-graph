@@ -66,7 +66,7 @@ func TestTopoOrderChildrenBeforeParents(t *testing.T) {
 
 func TestBuildLanesAndColors(t *testing.T) {
 	snap, commits, refs, edges := testData()
-	g := Build(snap, commits, refs, edges, nil)
+	g := Build(snap, commits, refs, edges, nil, nil)
 
 	byS := map[string]model.Node{}
 	for _, n := range g.Nodes {
@@ -109,7 +109,7 @@ func TestSquashClassification(t *testing.T) {
 	}
 	refs := []model.Ref{{Name: "dev", Type: "branch", TargetSHA: "S", IsDefault: true}}
 	edges := []model.Edge{{Child: "S", Parent: "P", ParentIndex: 0, Type: "commit"}}
-	g := Build(snap, commits, refs, edges, nil)
+	g := Build(snap, commits, refs, edges, nil, nil)
 
 	var sNode model.Node
 	for _, n := range g.Nodes {

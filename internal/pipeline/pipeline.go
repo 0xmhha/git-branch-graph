@@ -106,6 +106,10 @@ func Run(opts Options, prog Progress) (Result, error) {
 		return Result{}, err
 	}
 
+	// Cherry-pick relations (offline, `-x` markers).
+	cherries, _ := extract.ScanCherryPicks(acq.BareDir)
+	_ = extract.WriteCherries(runDir, cherries)
+
 	// (4) Enrich — GitHub PR/CI (optional).
 	var enriched map[string]model.PR
 	if !opts.NoEnrich {
@@ -115,7 +119,7 @@ func Run(opts Options, prog Progress) (Result, error) {
 
 	// (5) Ontology — lanes, columns, containment, classification.
 	prog("ontology", 85, "Computing branch graph…")
-	if err := BuildOntology(runDir, snap, commits, refs, edges, enriched); err != nil {
+	if err := BuildOntology(runDir, snap, commits, refs, edges, enriched, cherries); err != nil {
 		return Result{}, err
 	}
 
@@ -142,8 +146,8 @@ func existingRun(input, dataDir string) (id, dir string, ok bool) {
 }
 
 // BuildOntology computes and writes graph.json + graph.sqlite + prs.csv.
-func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR) error {
-	g := ontology.Build(snap, commits, refs, edges, enriched)
+func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherries map[string]string) error {
+	g := ontology.Build(snap, commits, refs, edges, enriched, cherries)
 	if err := ontology.WriteJSON(filepath.Join(runDir, "graph.json"), g); err != nil {
 		return fmt.Errorf("graph.json: %w", err)
 	}

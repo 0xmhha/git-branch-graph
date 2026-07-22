@@ -81,6 +81,48 @@ func WriteCSVs(outDir string, commits []model.Commit, refs []model.Ref, edges []
 	return Result{Commits: len(commits), Branches: branches, Tags: tags, RawDir: rawDir}, nil
 }
 
+// cherryMarker matches git's `-x` annotation: "(cherry picked from commit <sha>)".
+var cherryMarker = regexp.MustCompile(`cherry picked from commit ([0-9a-f]{7,40})`)
+
+// ScanCherryPicks finds commits carrying a `-x` cherry-pick marker and maps each
+// to its source commit SHA. Exact and offline (message-only; no blobs). When a
+// commit was cherry-picked through several branches it carries multiple markers;
+// the last (most immediate source) is used.
+func ScanCherryPicks(bareDir string) (map[string]string, error) {
+	// Only commits that mention the marker — cheap even on huge repos.
+	out, err := gitcmd.RunStream(bareDir, "log", "--all", "--no-abbrev",
+		"--grep=cherry picked from commit",
+		"--pretty=format:%H%x1f%b"+rs)
+	if err != nil {
+		return nil, err
+	}
+	picks := map[string]string{}
+	for _, rec := range strings.Split(string(out), rs) {
+		rec = strings.Trim(rec, "\n")
+		if rec == "" {
+			continue
+		}
+		f := strings.SplitN(rec, us, 2)
+		if len(f) < 2 {
+			continue
+		}
+		if m := cherryMarker.FindAllStringSubmatch(f[1], -1); len(m) > 0 {
+			picks[f[0]] = m[len(m)-1][1] // last marker = immediate source
+		}
+	}
+	return picks, nil
+}
+
+// WriteCherries writes the cherry-pick map to outDir/raw/cherries.csv.
+func WriteCherries(outDir string, picks map[string]string) error {
+	header := []string{"cherry_sha", "source_sha"}
+	rows := make([][]string, 0, len(picks))
+	for c, s := range picks {
+		rows = append(rows, []string{c, s})
+	}
+	return csvw.Write(filepath.Join(outDir, "raw", "cherries.csv"), header, rows)
+}
+
 // WritePRs writes the classified PR table to outDir/raw/prs.csv.
 func WritePRs(outDir string, prs []model.PR) error {
 	header := []string{"pr_num", "state", "merge_method", "merge_sha", "base_ref", "head_ref", "url", "ci_state"}

@@ -118,6 +118,22 @@ func loadRefs(path string) ([]model.Ref, error) {
 	return out, nil
 }
 
+// LoadCherries reads raw/cherries.csv (cherry_sha → source_sha); returns an
+// empty map if the file is absent.
+func LoadCherries(runDir string) map[string]string {
+	rows, err := readCSV(filepath.Join(runDir, "raw", "cherries.csv"))
+	if err != nil {
+		return map[string]string{}
+	}
+	m := make(map[string]string, len(rows))
+	for _, r := range rows {
+		if len(r) >= 2 {
+			m[r[0]] = r[1]
+		}
+	}
+	return m
+}
+
 func loadEdges(path string) ([]model.Edge, error) {
 	rows, err := readCSV(path)
 	if err != nil {
