@@ -119,6 +119,30 @@
   let contain = $state<Containment | null>(null)
   const containCache = new Map<string, Containment>()
   const hoveredIndex = $derived(hovered ? (indexOf.get(hovered.sha) ?? -1) : -1)
+
+  // C1 — branch highlight (click a column header) + commit filter.
+  let highlightCol = $state(-1)
+  let filter = $state('')
+  const filterLc = $derived(filter.trim().toLowerCase())
+  function matches(n: GraphNode): boolean {
+    if (!filterLc) return true
+    const pr = n.prNum ?? ''
+    return (
+      n.subject.toLowerCase().includes(filterLc) ||
+      n.author.toLowerCase().includes(filterLc) ||
+      (n.branchOf?.toLowerCase().includes(filterLc) ?? false) ||
+      pr === filterLc.replace('#', '') ||
+      ('#' + pr).includes(filterLc)
+    )
+  }
+  function dimmed(n: GraphNode): boolean {
+    if (highlightCol >= 0 && n.col !== highlightCol) return true
+    if (filterLc && !matches(n)) return true
+    return false
+  }
+  function toggleHighlight(c: number) {
+    highlightCol = highlightCol === c ? -1 : c
+  }
   async function onEnter(n: GraphNode, ev: MouseEvent) {
     hovered = n
     mouseX = ev.clientX
@@ -151,6 +175,26 @@
 </script>
 
 <div class="flex flex-col h-full">
+  <!-- filter / highlight toolbar -->
+  <div class="flex items-center gap-2 px-2.5 py-1.5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+    <input
+      class="w-64 px-2 py-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent outline-none focus:border-emerald-500 font-mono text-[11px]"
+      placeholder="filter commits — subject / author / #PR"
+      bind:value={filter}
+    />
+    {#if highlightCol >= 0}
+      <button
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium"
+        style="color:{columns[highlightCol]?.color ?? '#8b949e'}; background:color-mix(in srgb, {columns[highlightCol]?.color ?? '#8b949e'} 15%, transparent)"
+        onclick={() => (highlightCol = -1)}
+      >highlighting {columns[highlightCol]?.name} ✕</button>
+    {/if}
+    {#if filter}
+      <button class="text-[11px] text-neutral-400 hover:text-neutral-600" onclick={() => (filter = '')}>clear</button>
+    {/if}
+    <span class="ml-auto text-[11px] text-neutral-400">click a branch header to highlight its column</span>
+  </div>
+
   <!-- branch column headers (horizontally synced with the graph) -->
   <div class="relative overflow-hidden border-b border-neutral-200 dark:border-neutral-800 shrink-0" style="height:42px">
     <div class="absolute top-0 left-0 h-full" style="width:{totalW}px; transform:translateX({-scrollLeft}px)">
@@ -159,14 +203,21 @@
           {#if col.kind === 'other'}
             <span class="text-[11px] text-neutral-400 italic truncate">{col.name}</span>
           {:else}
-            <a
-              href={`${graph.linkBase}/tree/${col.name}`}
-              target="_blank"
-              rel="noopener"
-              class="px-2 py-0.5 rounded text-[11px] font-semibold truncate max-w-full"
-              style="color:{col.color}; background:color-mix(in srgb, {col.color} 15%, transparent)"
-              title={col.name}
-            >{col.name}</a>
+            <span class="flex items-center gap-0.5 max-w-full">
+              <button
+                class="px-2 py-0.5 rounded text-[11px] font-semibold truncate {highlightCol === c ? 'ring-1' : ''}"
+                style="color:{col.color}; background:color-mix(in srgb, {col.color} {highlightCol === c ? 24 : 15}%, transparent); {highlightCol === c ? `outline:1px solid ${col.color}` : ''}"
+                title={`Highlight ${col.name}`}
+                onclick={() => toggleHighlight(c)}
+              >{col.name}</button>
+              <a
+                href={`${graph.linkBase}/tree/${col.name}`}
+                target="_blank"
+                rel="noopener"
+                class="text-[10px] text-neutral-400 hover:text-emerald-500 shrink-0"
+                title="Open on GitHub"
+              >↗</a>
+            </span>
           {/if}
           {#if subLabel(col)}
             <span class="text-[9px] uppercase tracking-wide text-neutral-400">{subLabel(col)}</span>
@@ -190,7 +241,13 @@
 
       <!-- branch spines (rule-based extent) -->
       {#each spines as s (s.c)}
-        <line x1={s.x} x2={s.x} y1={s.y1} y2={s.y2} stroke={s.color} stroke-width="2" opacity="0.28" stroke-linecap="round" />
+        <line
+          x1={s.x} x2={s.x} y1={s.y1} y2={s.y2}
+          stroke={s.color}
+          stroke-width={highlightCol === s.c ? 3 : 2}
+          opacity={highlightCol < 0 ? 0.28 : highlightCol === s.c ? 0.55 : 0.08}
+          stroke-linecap="round"
+        />
       {/each}
 
       <!-- cross-column connectors: one horizontal line per fork/merge at the
@@ -199,15 +256,17 @@
         {@const faint = cc === otherIdx || pc === otherIdx}
         {@const stroke = e.parentIndex === 0 ? graph.nodes[ci].color : graph.nodes[pi].color}
         {@const dashed = e.type === 'squash' || e.type === 'cherry'}
+        {@const off = highlightCol >= 0 && cc !== highlightCol && pc !== highlightCol}
+        {@const op = (faint ? 0.22 : 0.95) * (off ? 0.18 : 1)}
         <path
           d={horizPath(colX(pc), colX(cc), y(ci))}
           fill="none"
           stroke={stroke}
           stroke-width={faint ? 1 : 2}
           stroke-dasharray={dashed ? '4 3' : undefined}
-          opacity={faint ? 0.22 : 0.95}
+          opacity={op}
         />
-        {#if !faint}
+        {#if !faint && !off}
           <polygon points={arrowHead(colX(cc), y(ci), colX(cc) > colX(pc))} fill={stroke} />
         {/if}
       {/each}
@@ -218,7 +277,8 @@
         {@const cx = colX(n.col)}
         {@const cy = y(i)}
         {@const isOther = n.col === otherIdx}
-        <g role="listitem" onmouseenter={(ev) => onEnter(n, ev)} onmouseleave={onLeave}>
+        {@const dim = dimmed(n)}
+        <g role="listitem" onmouseenter={(ev) => onEnter(n, ev)} onmouseleave={onLeave} opacity={dim ? 0.16 : 1}>
           <rect x="0" y={cy - rowH / 2} width={totalW} height={rowH} fill="transparent" />
           {#if n.prNum}
             <text x="8" y={cy + 3.5} font-size="10.5" font-family="ui-monospace, monospace" fill={n.mergeMethod === 'merge' ? '#58a6ff' : '#a371f7'} font-weight="600">PR #{n.prNum}</text>
