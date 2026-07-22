@@ -27,20 +27,25 @@ type Result struct {
 func Ensure(dataDir string, ref model.RepoRef, defaultOverride string) (Result, error) {
 	bare := paths.BareRepoDir(dataDir, ref)
 
-	if _, err := os.Stat(bare); err == nil {
-		// existing mirror -> incremental fetch
+	// A mirror is only reusable if it holds a valid HEAD; a dir left behind by a
+	// killed/partial clone must be discarded and re-cloned, not fetched into.
+	if valid(bare) {
 		if _, err := gitcmd.Run(bare, "fetch", "--prune", "--tags", "origin",
 			"+refs/heads/*:refs/heads/*"); err != nil {
 			return Result{}, fmt.Errorf("fetch: %w", err)
 		}
 	} else {
+		_ = os.RemoveAll(bare) // drop any partial leftover
 		if err := os.MkdirAll(filepath.Dir(bare), 0o755); err != nil {
 			return Result{}, err
 		}
-		// bare + blobless: full commit graph, no file blobs.
-		if _, err := gitcmd.Run("", "clone", "--bare", "--filter=blob:none",
-			ref.URL, bare); err != nil {
-			return Result{}, fmt.Errorf("clone: %w", err)
+		// bare + blobless; abort on a stalled transfer (no interactive prompts —
+		// see gitcmd.gitEnv) so the server never hangs indefinitely.
+		if _, err := gitcmd.Run("",
+			"-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=30",
+			"clone", "--bare", "--filter=blob:none", ref.URL, bare); err != nil {
+			_ = os.RemoveAll(bare) // don't leave a partial clone behind
+			return Result{}, fmt.Errorf("clone %s: %w", ref.URL, err)
 		}
 	}
 
@@ -61,4 +66,15 @@ func Ensure(dataDir string, ref model.RepoRef, defaultOverride string) (Result, 
 	}
 
 	return Result{BareDir: bare, DefaultBranch: def, HeadSHA: strings.TrimSpace(headSHA)}, nil
+}
+
+// valid reports whether bare is an existing repo with a resolvable HEAD.
+func valid(bare string) bool {
+	if _, err := os.Stat(bare); err != nil {
+		return false
+	}
+	if _, err := gitcmd.Run(bare, "rev-parse", "--verify", "HEAD"); err != nil {
+		return false
+	}
+	return true
 }
