@@ -3,6 +3,7 @@ node_modules/
 # build
 .next/
 dist/
+bin/
 # data (생성물: bare mirror 캐시 + 실행별 산출 폴더)
 data/.repos/
 data/*/
