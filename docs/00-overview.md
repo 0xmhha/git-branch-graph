@@ -57,7 +57,8 @@ go-wemix 기준 `.git` 174MB / 오브젝트 106,543개 / 커밋 14,532개 / defa
 - `01-architecture.md` — 파이프라인 상세, 모듈 경계, 실행 흐름
 - `02-data-model.md` — raw CSV 스키마 + 온톨로지 계층 + SQLite 스키마(핵심)
 - `03-graph-rendering.md` — 레인 배정 알고리즘, 색 규칙, 호버/링크 스펙
-- `04-project-plan.md` — 마일스톤, 디렉토리 구조, MVP 범위
+- `04-project-plan.md` — 마일스톤(M1–M5 완료), 디렉토리 구조, MVP 범위
+- `05-followups.md` — 선택적 후속(backlog): 분류 정확도·성능·GUI·운영
 
 ## 레퍼런스
 - **gitfut** (`references/gitfut`) — Next.js + GitHub GraphQL 소비 패턴의 청사진.
