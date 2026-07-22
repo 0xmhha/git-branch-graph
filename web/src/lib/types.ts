@@ -43,6 +43,8 @@ export interface GraphNode {
   mergeMethod?: string
   ciState?: string
   prVerified?: 'verified' | 'unverified'
+  cherryFrom?: string
+  cherryTo?: string[]
   branchOf?: string
   refs?: NodeRef[]
   containedBranches?: string[]

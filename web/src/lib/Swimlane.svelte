@@ -367,6 +367,9 @@
               <circle {cx} {cy} r={isOther ? 3 : nodeR} fill={n.color} opacity={isOther ? 0.5 : 1} />
             {/if}
           </a>
+          {#if n.cherryFrom || (n.cherryTo && n.cherryTo.length)}
+            <text x={cx - nodeR - 11} y={cy + 3.5} font-size="9">🍒</text>
+          {/if}
           {#if n.refs}
             {#each n.refs.filter((r) => r.type === 'tag') as tag, k}
               <a href={`${graph.linkBase}/releases/tag/${tag.name}`} target="_blank" rel="noopener">
@@ -392,6 +395,12 @@
       {#if hovered.isMerge}<span class="text-neutral-400">· merge</span>{/if}
     </div>
     <div class="mt-1 font-medium">{hovered.subject}</div>
+    {#if hovered.cherryFrom}
+      <div class="mt-0.5 text-[11px] text-pink-600 dark:text-pink-400">🍒 cherry-pick of <span class="font-mono">{hovered.cherryFrom.slice(0, 9)}</span></div>
+    {/if}
+    {#if hovered.cherryTo && hovered.cherryTo.length}
+      <div class="mt-0.5 text-[11px] text-pink-600 dark:text-pink-400">🍒 cherry-picked to {hovered.cherryTo.length} place{hovered.cherryTo.length > 1 ? 's' : ''}</div>
+    {/if}
     <div class="mt-0.5 text-neutral-500 flex items-center gap-1.5 flex-wrap">
       <span>{hovered.author} · {new Date(hovered.committedAt).toLocaleString()}</span>
       {#if hovered.prNum}

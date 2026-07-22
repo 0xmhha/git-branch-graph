@@ -103,6 +103,8 @@ type Node struct {
 	MergeMethod       string    // "merge" | "squash" | "rebase" | "" — landing method
 	CIState           string    // PR CI rollup ("" if unknown)
 	PRVerified        string    // "verified" | "unverified" | "" (no PR / enrich not run)
+	CherryFrom        string    // source SHA this commit was cherry-picked from ("" if none)
+	CherryTo          []string  // SHAs that cherry-picked this commit (in-graph)
 	BranchOf          string    // first-parent owning branch ("" if none)
 	Refs              []NodeRef // branch/tag decorations pointing here
 	ContainedBranches []string  // lightweight; inlined in JSON

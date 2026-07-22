@@ -15,7 +15,7 @@ import (
 // Build computes the full graph from the raw layer. enriched carries optional PR
 // data keyed by PR number (nil when enrich did not run); it refines the offline
 // merge/squash classification.
-func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR) model.Graph {
+func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherryPicks map[string]string) model.Graph {
 	linkBase := fmt.Sprintf("https://github.com/%s/%s", snap.Ref.Org, snap.Ref.Repo)
 
 	// Index and derived maps.
@@ -61,6 +61,14 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 	}
 
 	containment := computeContainment(order, parentsOf, refs)
+
+	// Cherry-pick relations (from `-x` markers): forward source + reverse targets.
+	cherryTo := map[string][]string{}
+	for cherry, source := range cherryPicks {
+		if inSet[cherry] && inSet[source] {
+			cherryTo[source] = append(cherryTo[source], cherry)
+		}
+	}
 
 	// Lightweight per-node branch containment (JSON-inlined; tags stay in SQLite).
 	branchContain := make(map[string][]string, len(commits))
@@ -140,6 +148,8 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 			MergeMethod:       methodOf[sha],
 			CIState:           ciOf[sha],
 			PRVerified:        verifiedOf[sha],
+			CherryFrom:        cherryPicks[sha],
+			CherryTo:          cherryTo[sha],
 			BranchOf:          bo,
 			Refs:              refsAt[sha],
 			ContainedBranches: branchContain[sha],
