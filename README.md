@@ -33,5 +33,15 @@ raw CSV(사실) → 온톨로지(파생 관계) → JSON(렌더) + SQLite(질의
 - `03-graph-rendering.md` — 레인 알고리즘·색 규칙·호버·링크
 - `04-project-plan.md` — 마일스톤·MVP·리스크
 
+## 사용법 (M1)
+```bash
+make build                                   # bin/gbg 빌드
+./bin/gbg ingest https://github.com/<org>/<repo>      # 원격
+./bin/gbg ingest /path/to/repo --default-branch dev   # 로컬
+# 산출: data/<org>__<repo>__<branch>__<sha7>/raw/{commits,edges,refs}.csv + meta.json
+```
+
 ## 상태
-설계 완료. 구현 착수 전 (M1 Extract 파이프라인부터).
+- **M1 Extract 파이프라인 — ✅ 완료.** bare+blobless clone → git 1-pass → raw CSV,
+  content-address 캐시. go-wemix 14,520 커밋 정합 검증.
+- 다음: M2 Ontology (레인·색·머지판별·containment → graph.json + graph.sqlite).
