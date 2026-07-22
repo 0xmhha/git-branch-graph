@@ -54,3 +54,26 @@ export async function fetchDiff(id: string, inRef: string, notinRef: string): Pr
   if (!r.ok) throw new Error(`diff: ${r.status}`)
   return r.json()
 }
+
+export interface Release {
+  family: string
+  date: string
+  mainTag: string
+  envs: Record<string, { tag: string; sha: string }>
+}
+
+export async function fetchReleases(id: string): Promise<{ environments: string[]; releases: Release[] }> {
+  const r = await fetch(`/api/runs/${encodeURIComponent(id)}/releases`)
+  if (!r.ok) throw new Error(`releases: ${r.status}`)
+  return r.json()
+}
+
+// Reverse lookup — accepts a commit SHA or a PR number.
+export async function fetchContainmentRef(id: string, ref: { sha?: string; pr?: string }): Promise<Containment> {
+  const p = new URLSearchParams()
+  if (ref.sha) p.set('sha', ref.sha)
+  if (ref.pr) p.set('pr', ref.pr)
+  const r = await fetch(`/api/runs/${encodeURIComponent(id)}/containment?${p}`)
+  if (!r.ok) throw new Error(`containment: ${r.status}`)
+  return r.json()
+}
