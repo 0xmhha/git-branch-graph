@@ -14,6 +14,7 @@ import "github.com/wm-it-25/git-branch-graph/internal/model"
 //   - method[sha]  : merge method attributed to that landing commit
 //   - ciOf[sha]    : CI rollup state for that landing commit (enriched only)
 //   - squashEdges  : set of "child|parent" first-parent edges to mark as squash
+//
 // enrichRan is true when the enrich stage actually queried GitHub (a token was
 // present). Only then can a PR be classified verified/unverified; otherwise its
 // status is unknown ("").
