@@ -2,12 +2,14 @@
   import { fetchRuns, fetchGraph } from './lib/api'
   import type { RunSummary, Graph } from './lib/types'
   import Swimlane from './lib/Swimlane.svelte'
+  import QueryPanel from './lib/QueryPanel.svelte'
 
   let runs = $state<RunSummary[]>([])
   let selectedId = $state<string>('')
   let graph = $state<Graph | null>(null)
   let error = $state<string>('')
   let loading = $state(false)
+  let showPanel = $state(true)
 
   async function loadRuns() {
     try {
@@ -56,20 +58,29 @@
         {graph.meta.counts.tags} tags
       </span>
     {/if}
-    <span class="ml-auto text-xs text-neutral-400">
+    <button
+      class="ml-auto text-xs px-2 py-1 rounded border border-neutral-300 dark:border-neutral-700"
+      onclick={() => (showPanel = !showPanel)}
+    >{showPanel ? 'Hide' : 'Show'} queries</button>
+    <span class="text-xs text-neutral-400">
       {#if graph}captured {new Date(graph.meta.capturedAt).toLocaleString()}{/if}
     </span>
   </header>
 
-  <main class="flex-1 min-h-0">
-    {#if error}
-      <p class="p-4 text-sm text-red-600">Error: {error}</p>
-    {:else if loading}
-      <p class="p-4 text-sm text-neutral-500">Loading graph…</p>
-    {:else if graph}
-      <Swimlane {graph} runId={selectedId} />
-    {:else}
-      <p class="p-4 text-sm text-neutral-500">No run selected.</p>
+  <main class="flex-1 min-h-0 flex">
+    <div class="flex-1 min-w-0">
+      {#if error}
+        <p class="p-4 text-sm text-red-600">Error: {error}</p>
+      {:else if loading}
+        <p class="p-4 text-sm text-neutral-500">Loading graph…</p>
+      {:else if graph}
+        <Swimlane {graph} runId={selectedId} />
+      {:else}
+        <p class="p-4 text-sm text-neutral-500">No run selected.</p>
+      {/if}
+    </div>
+    {#if graph && showPanel}
+      <QueryPanel {graph} runId={selectedId} />
     {/if}
   </main>
 </div>

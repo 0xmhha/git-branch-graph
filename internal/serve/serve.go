@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -27,6 +28,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/runs", s.handleRuns)
 	mux.HandleFunc("GET /api/runs/{id}/graph.json", s.handleGraph)
 	mux.HandleFunc("GET /api/runs/{id}/containment", s.handleContainment)
+	mux.HandleFunc("GET /api/runs/{id}/prs", s.handlePRs)
+	mux.HandleFunc("GET /api/runs/{id}/diff", s.handleDiff)
 
 	if s.WebDir != "" {
 		mux.Handle("/", spaFileServer(s.WebDir))
@@ -134,6 +137,124 @@ func (s *Server) handleContainment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"sha": sha, "branches": branches, "tags": tags})
+}
+
+// openRO opens the run's SQLite read-only.
+func (s *Server) openRO(dir string) (*sql.DB, error) {
+	return sql.Open("sqlite", "file:"+filepath.Join(dir, "graph.sqlite")+"?mode=ro")
+}
+
+func clampLimit(q string) int {
+	n, err := strconv.Atoi(q)
+	if err != nil || n <= 0 {
+		return 200
+	}
+	if n > 2000 {
+		return 2000
+	}
+	return n
+}
+
+// handlePRs lists PRs, optionally filtered by merge method / state.
+func (s *Server) handlePRs(w http.ResponseWriter, r *http.Request) {
+	dir, ok := s.runDir(w, r)
+	if !ok {
+		return
+	}
+	method := r.URL.Query().Get("method")
+	state := r.URL.Query().Get("state")
+	limit := clampLimit(r.URL.Query().Get("limit"))
+
+	dbc, err := s.openRO(dir)
+	if err != nil {
+		httpErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer dbc.Close()
+	rows, err := dbc.Query(`SELECT pr_num, state, merge_method, base_ref, head_ref, url
+		FROM prs
+		WHERE (?1='' OR merge_method=?1) AND (?2='' OR state=?2)
+		ORDER BY pr_num DESC LIMIT ?3`, method, state, limit)
+	if err != nil {
+		httpErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+	type pr struct {
+		Num         int    `json:"num"`
+		State       string `json:"state"`
+		MergeMethod string `json:"mergeMethod"`
+		BaseRef     string `json:"baseRef"`
+		HeadRef     string `json:"headRef"`
+		URL         string `json:"url"`
+	}
+	out := []pr{}
+	for rows.Next() {
+		var p pr
+		var num sql.NullInt64
+		var st, mm, br, hr, u sql.NullString
+		if err := rows.Scan(&num, &st, &mm, &br, &hr, &u); err != nil {
+			httpErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		p.Num = int(num.Int64)
+		p.State, p.MergeMethod, p.BaseRef, p.HeadRef, p.URL = st.String, mm.String, br.String, hr.String, u.String
+		out = append(out, p)
+	}
+	writeJSON(w, out)
+}
+
+// handleDiff returns commits contained in `in` but not in `notin` — e.g. commits
+// on dev not yet on a release branch.
+func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
+	dir, ok := s.runDir(w, r)
+	if !ok {
+		return
+	}
+	in := r.URL.Query().Get("in")
+	notin := r.URL.Query().Get("notin")
+	if in == "" || notin == "" {
+		httpErr(w, http.StatusBadRequest, fmt.Errorf("in and notin required"))
+		return
+	}
+	limit := clampLimit(r.URL.Query().Get("limit"))
+
+	dbc, err := s.openRO(dir)
+	if err != nil {
+		httpErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer dbc.Close()
+	rows, err := dbc.Query(`SELECT c.sha, c.subject, c.pr_num, c.committed_at
+		FROM commits c
+		WHERE EXISTS (SELECT 1 FROM containment WHERE sha=c.sha AND ref_name=?1)
+		  AND NOT EXISTS (SELECT 1 FROM containment WHERE sha=c.sha AND ref_name=?2)
+		ORDER BY c.committed_at DESC LIMIT ?3`, in, notin, limit)
+	if err != nil {
+		httpErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+	type row struct {
+		SHA         string `json:"sha"`
+		Subject     string `json:"subject"`
+		PRNum       string `json:"prNum"`
+		CommittedAt string `json:"committedAt"`
+	}
+	out := []row{}
+	for rows.Next() {
+		var rw row
+		var pr sql.NullInt64
+		if err := rows.Scan(&rw.SHA, &rw.Subject, &pr, &rw.CommittedAt); err != nil {
+			httpErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		if pr.Valid {
+			rw.PRNum = strconv.FormatInt(pr.Int64, 10)
+		}
+		out = append(out, rw)
+	}
+	writeJSON(w, map[string]any{"in": in, "notin": notin, "count": len(out), "commits": out})
 }
 
 // runDir resolves and validates the {id} path segment to a run folder.

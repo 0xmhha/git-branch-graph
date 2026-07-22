@@ -97,11 +97,23 @@
 > **개발/실행:** 개발은 `cd web && npm run dev`(Vite 5173 → `/api` 프록시 → `gbg serve :8080`).
 > 배포는 `npm run build` → `gbg serve --web-dir web/dist`. (embed.FS 단일바이너리는 패키징 단계에서.)
 
-### M4 — Enrich + 질의 UI
-- [3] GitHub GraphQL PR/CI 보강 → `prs.csv`, `checks.csv`
-- 병합방식 뱃지, CI 상태 표시
-- sql.js 애드혹 질의 패널 (containment 역질의)
-- 토큰 부재 시 graceful degrade 확인
+### M4 — Enrich + 질의 UI — ✅ 완료 (2026-07-22)
+- [x] **오프라인 병합 분류**(토큰 불필요): `pr_num` + 부모 수 → squash/merge. edge_type=squash(GUI 점선) + node.mergeMethod. **M2 이월 스쿼시 판별 해소**
+- [x] **온라인 enrich**(`internal/enrich`, GraphQL 배치 40/req): state·base/head_ref·url·CI rollup, mergeCommit 부모수로 권위 판별. 토큰은 env→`gh auth token`
+- [x] graceful degrade: 토큰 없으면 enrich 스킵, 오프라인 분류만으로 그래프 완성(`--no-enrich`로도 확인)
+- [x] `--repo owner/name` 오버라이드(로컬 경로 org 오추론 교정) → 링크·enrich 타깃 정정
+- [x] `raw/prs.csv` + sqlite `prs`/`checks` 채움
+- [x] serve 역질의 엔드포인트: `/prs?method=&state=`, `/diff?in=&notin=`(릴리즈 차집합)
+- [x] Svelte 질의 패널(Release diff / PRs by method 탭) + 툴팁 병합방식·CI 배지
+- **검증 결과 (go-wemix, 실제 `gh` 토큰):**
+  - 오프라인: 3324 PR 분류(squash 3292 / merge 32), 즉시
+  - enrich: 실제 wemixarchive PR 70개 확인(#186 squash·head=fix/sync-check-work-regression·CI SUCCESS, #172 merge·base=master), 나머지 `(#N)`은 go-ethereum 업스트림 번호라 null→degrade
+  - graph.json: squash 엣지 3292(점선 렌더), CI 노드 24, node.mergeMethod 채움
+  - serve 질의 정상(squash+merged 필터→실제 PR), svelte-check 0/0, JS 56KB(gzip 21KB)
+
+> **포크 주의:** go-wemix는 go-ethereum 포크라 대다수 `(#N)`이 업스트림 PR 번호.
+> 오프라인 분류는 구조 기반이라 유효하나, 비검증 PR의 링크는 best-guess. enrich가 실제 PR만 확정.
+> 비포크 저장소에선 대부분 enrich로 검증됨.
 
 ### M5 — 마감
 - 대규모 성능(뷰포트 가상화), 에러 처리, README

@@ -42,6 +42,20 @@ type Ref struct {
 	IsDefault bool
 }
 
+// PR is pull-request metadata (raw/prs.csv). MergeMethod is classified offline
+// (parent count) and refined online by enrich. Fields beyond Num/MergeMethod are
+// populated only when enrich runs with a token.
+type PR struct {
+	Num         string
+	State       string // "merged" | "open" | "closed" | "" (unknown offline)
+	MergeMethod string // "merge" | "squash" | "rebase" | ""
+	MergeSHA    string
+	BaseRef     string
+	HeadRef     string
+	URL         string
+	CIState     string // "SUCCESS" | "FAILURE" | "PENDING" | "" (rollup)
+}
+
 // Edge is a parent relationship, one row per (child,parent) (raw/edges.csv).
 type Edge struct {
 	Child       string
@@ -58,6 +72,7 @@ type Graph struct {
 	LinkBase string
 	Nodes    []Node
 	Edges    []GEdge
+	PRs      []PR
 	// Containment is the full commit->ref membership set (SQLite only; too large
 	// to inline in JSON). Keyed by commit SHA -> list of refs containing it.
 	Containment map[string][]ContainRef
@@ -73,6 +88,8 @@ type Node struct {
 	CommittedAt       string
 	PRNum             string
 	IsMerge           bool
+	MergeMethod       string    // "merge" | "squash" | "rebase" | "" — landing method
+	CIState           string    // PR CI rollup ("" if unknown)
 	BranchOf          string    // first-parent owning branch ("" if none)
 	Refs              []NodeRef // branch/tag decorations pointing here
 	ContainedBranches []string  // lightweight; inlined in JSON

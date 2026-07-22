@@ -17,8 +17,10 @@ func testData() (model.Snapshot, []model.Commit, []model.Ref, []model.Edge) {
 	c := func(sha string, ps []string, t string, subj string) model.Commit {
 		return model.Commit{SHA: sha, Parents: ps, CommittedAt: t, Subject: subj, IsMerge: len(ps) >= 2}
 	}
+	cM := c("C", []string{"B", "F"}, "2026-01-05T00:00:00Z", "merge feature (#9)")
+	cM.PRNum = "9"
 	commits := []model.Commit{
-		c("C", []string{"B", "F"}, "2026-01-05T00:00:00Z", "merge feature (#9)"),
+		cM,
 		c("B", []string{"A"}, "2026-01-04T00:00:00Z", "b"),
 		c("F", []string{"E"}, "2026-01-03T00:00:00Z", "f"),
 		c("E", []string{"A"}, "2026-01-02T00:00:00Z", "e"),
@@ -64,7 +66,7 @@ func TestTopoOrderChildrenBeforeParents(t *testing.T) {
 
 func TestBuildLanesAndColors(t *testing.T) {
 	snap, commits, refs, edges := testData()
-	g := Build(snap, commits, refs, edges)
+	g := Build(snap, commits, refs, edges, nil)
 
 	byS := map[string]model.Node{}
 	for _, n := range g.Nodes {
@@ -89,6 +91,40 @@ func TestBuildLanesAndColors(t *testing.T) {
 	}
 	if inflow.Type != "merge" {
 		t.Errorf("C->F edge type = %s, want merge", inflow.Type)
+	}
+	// C is a merge commit carrying (#9) -> classified as a merge PR.
+	if byS["C"].MergeMethod != "merge" {
+		t.Errorf("C mergeMethod = %q, want merge", byS["C"].MergeMethod)
+	}
+}
+
+func TestSquashClassification(t *testing.T) {
+	// A single-parent commit carrying a PR number is a squash landing; its
+	// first-parent edge must be marked squash.
+	snap := model.Snapshot{Ref: model.RepoRef{Org: "o", Repo: "r"}, DefaultBranch: "dev"}
+	commits := []model.Commit{
+		{SHA: "S", Parents: []string{"P"}, CommittedAt: "2026-01-02T00:00:00Z",
+			Subject: "fix: thing (#42)", PRNum: "42", IsMerge: false},
+		{SHA: "P", Parents: nil, CommittedAt: "2026-01-01T00:00:00Z", Subject: "root"},
+	}
+	refs := []model.Ref{{Name: "dev", Type: "branch", TargetSHA: "S", IsDefault: true}}
+	edges := []model.Edge{{Child: "S", Parent: "P", ParentIndex: 0, Type: "commit"}}
+	g := Build(snap, commits, refs, edges, nil)
+
+	var sNode model.Node
+	for _, n := range g.Nodes {
+		if n.SHA == "S" {
+			sNode = n
+		}
+	}
+	if sNode.MergeMethod != "squash" {
+		t.Errorf("S mergeMethod = %q, want squash", sNode.MergeMethod)
+	}
+	if len(g.Edges) != 1 || g.Edges[0].Type != "squash" {
+		t.Errorf("S->P edge type = %v, want squash", g.Edges)
+	}
+	if len(g.PRs) != 1 || g.PRs[0].Num != "42" || g.PRs[0].MergeMethod != "squash" {
+		t.Errorf("PRs = %+v, want one squash PR #42", g.PRs)
 	}
 }
 

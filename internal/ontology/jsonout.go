@@ -29,6 +29,8 @@ func WriteJSON(path string, g model.Graph) error {
 		CommittedAt       string   `json:"committedAt"`
 		PRNum             string   `json:"prNum,omitempty"`
 		IsMerge           bool     `json:"isMerge"`
+		MergeMethod       string   `json:"mergeMethod,omitempty"`
+		CIState           string   `json:"ciState,omitempty"`
 		BranchOf          string   `json:"branchOf,omitempty"`
 		Refs              []jRef   `json:"refs,omitempty"`
 		ContainedBranches []string `json:"containedBranches,omitempty"`
@@ -80,7 +82,8 @@ func WriteJSON(path string, g model.Graph) error {
 		doc.Nodes = append(doc.Nodes, jNode{
 			SHA: n.SHA, Lane: n.Lane, Color: n.Color, Subject: n.Subject,
 			Author: n.Author, CommittedAt: n.CommittedAt, PRNum: n.PRNum,
-			IsMerge: n.IsMerge, BranchOf: n.BranchOf, Refs: refs,
+			IsMerge: n.IsMerge, MergeMethod: n.MergeMethod, CIState: n.CIState,
+			BranchOf: n.BranchOf, Refs: refs,
 			ContainedBranches: n.ContainedBranches,
 			Links:             jLinks{Commit: n.Links.Commit, PR: n.Links.PR, Tree: n.Links.Tree},
 		})

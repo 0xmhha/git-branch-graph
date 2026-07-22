@@ -81,6 +81,16 @@ func WriteCSVs(outDir string, commits []model.Commit, refs []model.Ref, edges []
 	return Result{Commits: len(commits), Branches: branches, Tags: tags, RawDir: rawDir}, nil
 }
 
+// WritePRs writes the classified PR table to outDir/raw/prs.csv.
+func WritePRs(outDir string, prs []model.PR) error {
+	header := []string{"pr_num", "state", "merge_method", "merge_sha", "base_ref", "head_ref", "url", "ci_state"}
+	rows := make([][]string, 0, len(prs))
+	for _, p := range prs {
+		rows = append(rows, []string{p.Num, p.State, p.MergeMethod, p.MergeSHA, p.BaseRef, p.HeadRef, p.URL, p.CIState})
+	}
+	return csvw.Write(filepath.Join(outDir, "raw", "prs.csv"), header, rows)
+}
+
 // Run scans the bare repo and writes raw/*.csv under outDir.
 func Run(bareDir, outDir, defaultBranch string) (Result, error) {
 	commits, refs, edges, err := Scan(bareDir, defaultBranch)
