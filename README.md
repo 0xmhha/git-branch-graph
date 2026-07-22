@@ -46,7 +46,11 @@ make build                                            # bin/gbg 빌드
 # 산출: data/<org>__<repo>__<branch>__<sha7>/
 #   raw/{commits,edges,refs,prs}.csv   graph.json(렌더)   graph.sqlite(질의)   meta.json
 
-# --- 프론트 (Svelte, web/) ---
+# --- 단일 바이너리 (SPA 내장) ---
+make binary                                           # vite build → embed → go build
+./bin/gbg serve                                       # --web-dir 없이 SPA+API 단독 서빙(:8080)
+
+# --- 프론트 개발 (Svelte, web/) ---
 cd web && npm install
 npm run dev      # Vite 5173 → /api 를 gbg serve(:8080)로 프록시
 npm run build    # web/dist 생성 → gbg serve --web-dir web/dist
@@ -58,5 +62,7 @@ npm run build    # web/dist 생성 → gbg serve --web-dir web/dist
 - **M3 GUI — ✅ 완료.** `gbg serve`(Go) + Svelte SPA(SVG 스윔레인, 호버·GitHub 링크·뷰포트 가상화).
 - **M4 Enrich + 질의 UI — ✅ 완료.** 오프라인 squash/merge 분류(점선 엣지) + GitHub PR/CI enrich(`gh` 토큰) +
   역질의 패널(Release diff / PRs by method) + 병합방식·CI 배지. JS 56KB.
-  - 잔여(선택): 체리픽 판별(patch-id/blob 필요), graph.sqlite 정수 id 정규화(서버사이드 질의라 비긴급).
-- 다음: **M5 마감** — 원격 URL 회귀, 성능, embed.FS 단일 바이너리 패키징.
+- **M5 마감 — ✅ 완료.** embed.FS 단일 바이너리(`make binary`, 15MB) + 원격 URL 회귀 + gzip(graph.json 11.7MB→1.43MB).
+
+**M1–M5 전 파이프라인 동작.** 선택적 후속: 체리픽 판별(patch-id/blob), sqlite 정수 id 정규화(서버질의라 비긴급),
+브랜치 하이라이트/필터 확장.

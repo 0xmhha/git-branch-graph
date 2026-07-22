@@ -115,9 +115,25 @@
 > 오프라인 분류는 구조 기반이라 유효하나, 비검증 PR의 링크는 best-guess. enrich가 실제 PR만 확정.
 > 비포크 저장소에선 대부분 enrich로 검증됨.
 
-### M5 — 마감
-- 대규모 성능(뷰포트 가상화), 에러 처리, README
-- 여러 저장소 URL 회귀 테스트
+### M5 — 마감 — ✅ 완료 (2026-07-22)
+- [x] **embed.FS 단일 바이너리**: `internal/webui`가 `web/dist`를 내장 → `gbg serve`가
+      `--web-dir` 없이 SPA+API 단독 서빙. `make binary`(vite build→copy→go build). 바이너리 15MB
+- [x] serve 우선순위: 내장 FS > `--web-dir` > API-only, SPA 폴백 라우팅
+- [x] **원격 URL 회귀**: `https://github.com/octocat/Hello-World` blobless 클론 →
+      URL org/repo 파싱 + **원격 default 브랜치 자동 감지(master)** + 전체 파이프라인, 0.9s
+- [x] **성능/전송**: gzip 미들웨어 → graph.json **11.7MB → 1.43MB(8.2×)**, 무결성 확인.
+      렌더는 세로 뷰포트 가상화(M3)로 14.5k 노드도 보이는 창만 그림
+- [x] Makefile: `build`/`web`/`binary`/`run`/`test`/`vet`/`clean`
+- **검증:** 내장 바이너리가 index.html·자산·SPA폴백·API 모두 서빙, gzip 8.2× 무결,
+  원격 클론 default 자동, go test/vet·svelte-check 0/0
+
+## 완료 요약 (M1–M5)
+전 파이프라인 동작: URL → bare/blobless clone → git 1-pass(raw CSV) →
+enrich(PR/CI, 선택) → ontology(레인·색·머지분류·containment) → graph.json + graph.sqlite →
+`gbg serve`(단일 바이너리, gzip) → Svelte SVG 스윔레인(호버·GitHub 링크·역질의 패널).
+
+**선택적 후속:** 체리픽 판별(patch-id/blob), graph.sqlite 정수 id 정규화(서버질의라 비긴급),
+브랜치 하이라이트/필터 UI 확장, CI 배지 릴리즈 대시보드화.
 
 ## MVP 정의 (최소 가치)
 **M1 + M2 + M3** = "URL 넣으면 그 시점 스냅샷을 스윔레인으로 보고, 호버·링크가 된다."
