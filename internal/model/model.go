@@ -22,16 +22,16 @@ type Snapshot struct {
 
 // Commit is one node in the graph (raw/commits.csv).
 type Commit struct {
-	SHA          string
-	Parents      []string
-	AuthorName   string
-	AuthorEmail  string
-	AuthoredAt   string // ISO8601
-	CommittedAt  string
-	Refs         string // git %D decoration
-	Subject      string
-	PRNum        string // parsed from "(#123)"; "" if none
-	IsMerge      bool
+	SHA         string
+	Parents     []string
+	AuthorName  string
+	AuthorEmail string
+	AuthoredAt  string // ISO8601
+	CommittedAt string
+	Refs        string // git %D decoration
+	Subject     string
+	PRNum       string // parsed from "(#123)"; "" if none
+	IsMerge     bool
 }
 
 // Ref is a branch or tag pointer (raw/refs.csv).

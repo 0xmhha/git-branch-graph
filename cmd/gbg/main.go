@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/wm-it-25/git-branch-graph/internal/export"
 	"github.com/wm-it-25/git-branch-graph/internal/loader"
+	"github.com/wm-it-25/git-branch-graph/internal/mcpserver"
 	"github.com/wm-it-25/git-branch-graph/internal/pipeline"
 	"github.com/wm-it-25/git-branch-graph/internal/runs"
 	"github.com/wm-it-25/git-branch-graph/internal/serve"
@@ -56,6 +58,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
+	case "mcp":
+		if err := runMCP(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -71,6 +78,16 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "gbg serve    [--data-dir dir] [--web-dir web/dist] [--addr :8080]")
 	fmt.Fprintln(os.Stderr, "gbg export   <out-dir> [--data-dir dir] [--run id]   # static site (no server needed)")
 	fmt.Fprintln(os.Stderr, "gbg runs     list | rm <id>   [--data-dir dir]        # manage run folders")
+	fmt.Fprintln(os.Stderr, "gbg mcp      [--data-dir dir]                          # MCP server (stdio) for AI clients")
+}
+
+// runMCP serves the analysis to AI clients over MCP (stdio).
+func runMCP(args []string) error {
+	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+	dataDir := fs.String("data-dir", "./data", "run folders root")
+	_ = fs.Parse(args)
+	srv := &mcpserver.Server{DataDir: *dataDir}
+	return srv.Run(context.Background())
 }
 
 // runRuns lists or removes run folders.

@@ -22,6 +22,20 @@ GitHub URL
 - **SQL 1급** — `graph.sqlite`로 "이 수정 어디 들어갔나" 역질의.
 - **호버·GitHub 하이퍼링크** — 커밋/PR/브랜치/태그 페이지로 이동.
 
+## AI 연동 (MCP)
+`gbg mcp`는 분석 결과를 **Model Context Protocol** 도구로 노출한다(stdio). AI가
+graph.json을 통째로 받는 대신 **역질의**를 호출한다: 어디에 포함됐나·릴리즈 내용·미릴리즈
+커밋·병합방식·커밋 검색. AI 클라이언트(Claude Desktop/Code 등)에 등록:
+```jsonc
+{ "mcpServers": {
+    "git-branch-graph": {
+      "command": "/abs/path/bin/gbg",
+      "args": ["mcp", "--data-dir", "/abs/path/data"]
+    } } }
+```
+**도구**: `list_repositories`, `repository_summary`, `where_is`(SHA/PR→포함 브랜치·릴리즈),
+`unreleased_commits`, `list_prs`, `releases`(환경 매트릭스), `search_commits`.
+
 ## 데이터 계층
 raw CSV(사실) → 온톨로지(파생 관계) → JSON(렌더) + SQLite(질의)
 
@@ -42,6 +56,9 @@ make build                                            # bin/gbg 빌드
 ./bin/gbg ingest /path/to/repo --repo owner/name      # 로컬 경로의 링크·enrich 타깃 교정
 ./bin/gbg ontology data/<run-dir>                     # raw/*.csv 로 graph.* 재계산
 ./bin/gbg serve --web-dir web/dist                    # HTTP API + SPA 호스팅(:8080)
+./bin/gbg mcp                                         # MCP 서버(stdio) — AI 클라이언트용
+./bin/gbg export out/                                 # 서버 없는 정적 사이트
+./bin/gbg runs list                                   # 분석 run 목록/삭제(rm <id>)
 # enrich: env GITHUB_TOKEN 또는 `gh auth token` 자동 사용, 없으면 오프라인 분류만 (--no-enrich 로 강제 스킵)
 # 산출: data/<org>__<repo>__<branch>__<sha7>/
 #   raw/{commits,edges,refs,prs}.csv   graph.json(렌더)   graph.sqlite(질의)   meta.json
