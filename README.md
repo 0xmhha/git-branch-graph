@@ -35,20 +35,24 @@ raw CSV(사실) → 온톨로지(파생 관계) → JSON(렌더) + SQLite(질의
 
 ## 사용법
 ```bash
+# --- 코어 (Go) ---
 make build                                            # bin/gbg 빌드
 ./bin/gbg ingest https://github.com/<org>/<repo>      # 원격 (clone→raw→ontology)
 ./bin/gbg ingest /path/to/repo --default-branch dev   # 로컬
 ./bin/gbg ontology data/<run-dir>                     # raw/*.csv 로 graph.* 재계산
+./bin/gbg serve --web-dir web/dist                    # HTTP API + SPA 호스팅(:8080)
 # 산출: data/<org>__<repo>__<branch>__<sha7>/
-#   raw/{commits,edges,refs}.csv   (raw 계층)
-#   graph.json                     (렌더용: 노드/엣지 + 레인/색/링크)
-#   graph.sqlite                   (질의용: containment 역질의 등)
-#   meta.json
+#   raw/{commits,edges,refs}.csv   graph.json(렌더)   graph.sqlite(질의)   meta.json
+
+# --- 프론트 (Svelte, web/) ---
+cd web && npm install
+npm run dev      # Vite 5173 → /api 를 gbg serve(:8080)로 프록시
+npm run build    # web/dist 생성 → gbg serve --web-dir web/dist
 ```
 
 ## 상태
 - **M1 Extract — ✅ 완료.** bare+blobless clone → git 1-pass → raw CSV, content-address 캐시.
-- **M2 Ontology — ✅ 완료.** 위상 레인 배정 + 색 규칙 + 비트셋 containment → graph.json(11MB) + graph.sqlite.
-  go-wemix 14,520 노드 / 17,400 엣지, SQL 역질의 검증.
-  - 이월: 스쿼시/체리픽 edge_type(M4, PR API), graph.sqlite 정수 id 정규화(M4, 브라우저용 축소).
-- 다음: **M3 GUI** — graph.json 로드 → SVG 스윔레인(호버·하이퍼링크).
+- **M2 Ontology — ✅ 완료.** 위상 레인 + 색 규칙 + 비트셋 containment → graph.json + graph.sqlite. 14,520노드/17,400엣지.
+- **M3 GUI — ✅ 완료.** `gbg serve`(Go) + Svelte SPA(SVG 스윔레인, 호버·GitHub 링크·뷰포트 가상화). JS 49KB.
+  - 이월: 스쿼시/체리픽 edge_type(M4, PR API), graph.sqlite 정수 id 정규화(M4).
+- 다음: **M4 Enrich + 질의 UI** — GitHub PR/CI 보강, 병합방식 판별, 역질의 패널.

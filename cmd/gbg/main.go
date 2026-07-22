@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/wm-it-25/git-branch-graph/internal/model"
 	"github.com/wm-it-25/git-branch-graph/internal/ontology"
 	"github.com/wm-it-25/git-branch-graph/internal/paths"
+	"github.com/wm-it-25/git-branch-graph/internal/serve"
 )
 
 func main() {
@@ -44,6 +46,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
+	case "serve":
+		if err := runServe(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -56,6 +63,26 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "gbg ingest   <github-url-or-local-path> [--data-dir dir] [--default-branch b] [--force]")
 	fmt.Fprintln(os.Stderr, "gbg ontology <run-dir>   # recompute graph.json + graph.sqlite from raw/*.csv")
+	fmt.Fprintln(os.Stderr, "gbg serve    [--data-dir dir] [--web-dir web/dist] [--addr :8080]")
+}
+
+// runServe starts the HTTP backend.
+func runServe(args []string) error {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	dataDir := fs.String("data-dir", "./data", "run folders root")
+	webDir := fs.String("web-dir", "web/dist", "built SPA directory (optional)")
+	addr := fs.String("addr", ":8080", "listen address")
+	_ = fs.Parse(args)
+
+	wd := *webDir
+	if _, err := os.Stat(wd); err != nil {
+		wd = "" // no built SPA yet — API only
+	}
+	srv := &serve.Server{DataDir: *dataDir, WebDir: wd}
+
+	fmt.Printf("gbg serve on http://localhost%s  (data=%s web=%q)\n", *addr, *dataDir, wd)
+	fmt.Printf("  GET /api/runs\n  GET /api/runs/{id}/graph.json\n  GET /api/runs/{id}/containment?sha=...\n")
+	return http.ListenAndServe(*addr, srv.Handler())
 }
 
 // buildOntology computes the graph and writes graph.json + graph.sqlite.

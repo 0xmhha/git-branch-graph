@@ -101,14 +101,22 @@ git -C <repo>.git log --all --no-abbrev --date=iso-strict \
 
 ---
 
-## [5] Serve — GUI
+## [5] Serve — GUI (Svelte SPA + `gbg serve` Go)
 **입력:** `data/<run>/` 폴더
 
-**처리:**
-- Next.js(gitfut 스택) route가 URL 제출을 받아 [1]~[4] 잡 실행 → 완료 폴더 경로 반환
-- 페이지는 `graph.json`을 fetch → **SVG 스윔레인** 렌더 (호버·하이퍼링크)
-- 애드혹 질의 패널(옵션): `graph.sqlite`를 sql.js(WASM)로 브라우저에서 직접 질의,
-  또는 서버 route가 질의
+**백엔드 `gbg serve` (Go, 서블릿 역할):**
+- `GET /api/runs` — `data/` 폴더 목록(meta 요약)
+- `GET /api/runs/:id/graph.json` — 렌더 데이터 서빙
+- `GET /api/runs/:id/query?...` — `graph.sqlite` **서버사이드 질의** → 작은 JSON
+  (브라우저는 239MB DB를 로드하지 않음)
+- `POST /api/ingest?url=...` — [1]~[4] 잡 트리거(선택)
+- `/` — `web/dist`를 `embed.FS`로 정적 호스팅
+
+**프론트 Svelte SPA:**
+- `graph.json` fetch → **SVG 스윔레인** 렌더 (Y=노드 인덱스, X=lane; 색·링크 선계산)
+- 호버 툴팁 + GitHub 하이퍼링크
+- 역질의/필터는 `/api/query`로 on-demand (sql.js는 순수정적 배포 폴백)
+- 개발: Vite dev(5173) → `/api` 프록시 → Go(8080); 배포: 단일 바이너리
 
 **"실시간성"의 정의:** GUI는 항상 "마지막 ingest 스냅샷"을 본다. URL 제출/갱신 버튼이
 [1](fetch 증분)~[4]를 트리거하는 **on-demand 스냅샷** 모델. HEAD 불변이면 캐시 폴더 재사용.
@@ -119,18 +127,20 @@ git -C <repo>.git log --all --no-abbrev --date=iso-strict \
 코어는 Go(표준 레이아웃), 웹은 별도 `web/`(Node). 둘은 `data/`로만 만난다.
 ```
 git-branch-graph/
-├─ cmd/gbg/           # Go CLI 진입점 (ingest 등 서브커맨드)
+├─ cmd/gbg/           # Go CLI 진입점 (ingest / ontology / serve)
 ├─ internal/
 │  ├─ acquire/        # [1] clone/fetch (bare, blobless)
 │  ├─ extract/        # [2] git 1-pass → raw csv
 │  ├─ enrich/         # [3] GitHub GraphQL 보강
-│  ├─ ontology/       # [4] 레인·색·판별·containment
-│  ├─ db/             # sqlite(modernc) 스키마/마이그레이션/쿼리
-│  ├─ model/          # 공통 타입(Commit, Ref, Edge, PR ...)
+│  ├─ ontology/       # [4] 레인·색·판별·containment → json
+│  ├─ db/             # [4] sqlite(modernc) 생성
+│  ├─ loader/         # raw/*.csv 재로드 (standalone ontology)
+│  ├─ serve/          # [5] gbg serve: HTTP API + 정적 호스팅
+│  ├─ model/          # 공통 타입(Commit, Ref, Edge, Node, GEdge ...)
 │  ├─ gitcmd/         # git 서브프로세스 헬퍼
 │  ├─ csvw/           # RFC4180 CSV writer
 │  └─ paths/          # 슬러그·content-address 폴더 네이밍
-├─ web/               # [5] Next.js 대시보드 (data/ 읽어 SVG 렌더)
+├─ web/               # [5] Svelte SPA (Vite) — SVG 스윔레인, dist를 Go에 embed
 ├─ data/
 │  ├─ .repos/                      # bare mirror 캐시 (gitignore)
 │  └─ <org>__<repo>__<branch>__<sha7>/
