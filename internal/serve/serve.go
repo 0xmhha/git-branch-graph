@@ -33,6 +33,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}/containment", s.handleContainment)
 	mux.HandleFunc("GET /api/runs/{id}/prs", s.handlePRs)
 	mux.HandleFunc("GET /api/runs/{id}/diff", s.handleDiff)
+	mux.HandleFunc("GET /api/runs/{id}/releases", s.handleReleases)
 	mux.HandleFunc("POST /api/ingest", s.handleIngestStart)
 	mux.HandleFunc("GET /api/ingest/{jobId}/events", s.handleIngestEvents)
 
@@ -108,11 +109,6 @@ func (s *Server) handleContainment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sha := r.URL.Query().Get("sha")
-	if sha == "" {
-		httpErr(w, http.StatusBadRequest, fmt.Errorf("missing sha"))
-		return
-	}
 	// Read-only open of the run's SQLite — server-side query, small JSON back.
 	dbc, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "graph.sqlite")+"?mode=ro")
 	if err != nil {
@@ -120,6 +116,20 @@ func (s *Server) handleContainment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer dbc.Close()
+
+	// Accept either a commit SHA or a PR number (resolved to its merge commit).
+	sha := r.URL.Query().Get("sha")
+	if sha == "" {
+		if pr := r.URL.Query().Get("pr"); pr != "" {
+			if s, ok := resolvePRSHA(dbc, pr); ok {
+				sha = s
+			}
+		}
+	}
+	if sha == "" {
+		httpErr(w, http.StatusBadRequest, fmt.Errorf("missing sha or pr"))
+		return
+	}
 	rows, err := dbc.Query(
 		`SELECT ref_name, ref_type FROM containment WHERE sha=? ORDER BY ref_type, ref_name`, sha)
 	if err != nil {
