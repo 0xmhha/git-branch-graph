@@ -22,19 +22,51 @@
     return m
   })
 
+  // C2 — viewport range (client-side; data is fully loaded, newest-first) + jump.
+  type RangeOpt = { label: string; kind: 'count' | 'months' | 'all'; v?: number }
+  const rangeOptions: RangeOpt[] = [
+    { label: 'recent 200', kind: 'count', v: 200 },
+    { label: 'recent 1,000', kind: 'count', v: 1000 },
+    { label: 'recent 5,000', kind: 'count', v: 5000 },
+    { label: 'last 3 months', kind: 'months', v: 3 },
+    { label: 'last 12 months', kind: 'months', v: 12 },
+    { label: 'all', kind: 'all' },
+  ]
+  // Default to "recent 1,000": caps large repos, and shows everything for small
+  // ones (Math.min with total), so it works well at any size.
+  let rangeIdx = $state(1)
+
+  function computeLimit(idx: number): number {
+    const total = graph.nodes.length
+    const o = rangeOptions[idx]
+    if (o.kind === 'all') return total
+    if (o.kind === 'count') return Math.min(total, o.v ?? total)
+    const newest = Date.parse(graph.nodes[0]?.committedAt ?? '')
+    if (isNaN(newest)) return total
+    const cutoff = newest - (o.v ?? 0) * 30.44 * 24 * 3600 * 1000
+    let i = 0
+    while (i < total && Date.parse(graph.nodes[i].committedAt) >= cutoff) i++
+    return Math.max(1, i)
+  }
+  // N = number of most-recent commits rendered (the viewport window).
+  const N = $derived(computeLimit(rangeIdx))
+  let jumpText = $state('')
+  let jumpFlash = $state(-1)
+
   const colX = (c: number) => gutterW + c * colW + colW / 2
   const y = (i: number) => padT + i * rowH
   const totalW = $derived(gutterW + ncols * colW)
-  const totalH = $derived(padT * 2 + graph.nodes.length * rowH)
+  const totalH = $derived(padT * 2 + N * rowH)
 
-  // Vertical extent (row range) of each column.
+  // Vertical extent (row range) of each column, within the current window.
   const extent = $derived.by(() => {
     const min = new Array(ncols).fill(Infinity)
     const max = new Array(ncols).fill(-Infinity)
-    graph.nodes.forEach((n, i) => {
-      if (i < min[n.col]) min[n.col] = i
-      if (i > max[n.col]) max[n.col] = i
-    })
+    for (let i = 0; i < N; i++) {
+      const c = graph.nodes[i].col
+      if (i < min[c]) min[c] = i
+      if (i > max[c]) max[c] = i
+    }
     return { min, max }
   })
 
@@ -74,12 +106,13 @@
   let viewportH = $state(600)
   let scroller = $state<HTMLDivElement | null>(null)
   const visStart = $derived(Math.max(0, Math.floor(scrollTop / rowH) - buffer))
-  const visEnd = $derived(Math.min(graph.nodes.length, Math.ceil((scrollTop + viewportH) / rowH) + buffer))
+  const visEnd = $derived(Math.min(N, Math.ceil((scrollTop + viewportH) / rowH) + buffer))
   const visNodes = $derived(graph.nodes.slice(visStart, visEnd))
-  // Only cross-column edges are drawn (same-column runs are covered by the spine).
+  // Only cross-column edges are drawn (same-column runs are covered by the spine);
+  // both endpoints must fall inside the current window.
   const visEdges = $derived(
     edgeRows.filter(({ ci, pi, cc, pc }) => {
-      if (ci < 0 || pi < 0 || cc === pc) return false
+      if (ci < 0 || pi < 0 || cc === pc || ci >= N || pi >= N) return false
       return !(Math.max(ci, pi) < visStart || Math.min(ci, pi) > visEnd)
     }),
   )
@@ -172,6 +205,23 @@
     if (col.role === 'other') return ''
     return col.kind === 'stale' ? `${col.role} · stale` : col.role
   }
+
+  // Jump to a commit by SHA or PR number (declared last so all refs are in scope).
+  function jump() {
+    const v = jumpText.trim().replace(/^#/, '')
+    if (!v) return
+    let idx = /^\d+$/.test(v) ? graph.nodes.findIndex((n) => n.prNum === v) : -1
+    if (idx < 0) idx = graph.nodes.findIndex((n) => n.sha.startsWith(v.toLowerCase()))
+    if (idx < 0) return
+    if (idx >= N) rangeIdx = rangeOptions.length - 1 // widen to 'all' so it's visible
+    requestAnimationFrame(() => {
+      scroller?.scrollTo({ top: Math.max(0, y(idx) - viewportH / 2), behavior: 'smooth' })
+    })
+    jumpFlash = idx
+    setTimeout(() => {
+      if (jumpFlash === idx) jumpFlash = -1
+    }, 1800)
+  }
 </script>
 
 <div class="flex flex-col h-full">
@@ -192,7 +242,25 @@
     {#if filter}
       <button class="text-[11px] text-neutral-400 hover:text-neutral-600" onclick={() => (filter = '')}>clear</button>
     {/if}
-    <span class="ml-auto text-[11px] text-neutral-400">click a branch header to highlight its column</span>
+
+    <div class="ml-auto flex items-center gap-2">
+      <select
+        class="px-1.5 py-1 text-[11px] rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent outline-none"
+        bind:value={rangeIdx}
+        title="Rendered range"
+      >
+        {#each rangeOptions as o, i}
+          <option value={i}>{o.label}</option>
+        {/each}
+      </select>
+      <span class="text-[11px] text-neutral-400 tabular-nums whitespace-nowrap">{N.toLocaleString()} / {graph.nodes.length.toLocaleString()}</span>
+      <input
+        class="w-40 px-2 py-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent outline-none focus:border-emerald-500 font-mono text-[11px]"
+        placeholder="jump to SHA / #PR"
+        bind:value={jumpText}
+        onkeydown={(e) => e.key === 'Enter' && jump()}
+      />
+    </div>
   </div>
 
   <!-- branch column headers (horizontally synced with the graph) -->
@@ -237,6 +305,9 @@
       {/each}
       {#if hoveredIndex >= 0}
         <rect x="0" y={y(hoveredIndex) - rowH / 2} width={totalW} height={rowH} fill="currentColor" opacity="0.07" />
+      {/if}
+      {#if jumpFlash >= 0}
+        <rect x="0" y={y(jumpFlash) - rowH / 2} width={totalW} height={rowH} fill="#10b981" opacity="0.16" />
       {/if}
 
       <!-- branch spines (rule-based extent) -->
