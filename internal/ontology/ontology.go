@@ -15,7 +15,7 @@ import (
 // Build computes the full graph from the raw layer. enriched carries optional PR
 // data keyed by PR number (nil when enrich did not run); it refines the offline
 // merge/squash classification.
-func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherryPicks map[string]string) model.Graph {
+func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherryPicks map[string]string, containMode string) model.Graph {
 	linkBase := fmt.Sprintf("https://github.com/%s/%s", snap.Ref.Org, snap.Ref.Repo)
 
 	// Index and derived maps.
@@ -60,7 +60,7 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 		refsAt[r.TargetSHA] = append(refsAt[r.TargetSHA], model.NodeRef{Name: r.Name, Type: r.Type})
 	}
 
-	containment := computeContainment(order, parentsOf, refs)
+	containment := computeContainment(order, parentsOf, refs, containKeep(containMode, commits, order))
 
 	// Cherry-pick relations (from `-x` markers): forward source + reverse targets.
 	cherryTo := map[string][]string{}

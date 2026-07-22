@@ -2,6 +2,7 @@ package ontology
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,39 @@ const activeWindow = 90 * 24 * time.Hour
 // roleRank orders columns left→right: development branches sit left of the
 // default, integration/production branches to its right.
 var roleRank = map[string]int{"feature": 0, "default": 1, "release": 2, "hotfix": 3, "master": 4, "other": 5}
+
+// containKeep builds the set of commits whose containment is emitted, per the
+// mode: "" / "full" = all (nil), "pr-only" = commits carrying a PR, "recent:N" =
+// the newest N commits. Restricting only shrinks the OUTPUT, never the answer.
+func containKeep(mode string, commits []model.Commit, order []string) map[string]bool {
+	switch {
+	case mode == "" || mode == "full":
+		return nil
+	case mode == "pr-only":
+		keep := make(map[string]bool)
+		for _, c := range commits {
+			if c.PRNum != "" {
+				keep[c.SHA] = true
+			}
+		}
+		return keep
+	case strings.HasPrefix(mode, "recent:"):
+		n, err := strconv.Atoi(strings.TrimPrefix(mode, "recent:"))
+		if err != nil || n < 0 {
+			return nil
+		}
+		if n > len(order) {
+			n = len(order)
+		}
+		keep := make(map[string]bool, n)
+		for _, sha := range order[:n] {
+			keep[sha] = true
+		}
+		return keep
+	default:
+		return nil
+	}
+}
 
 // roleOf classifies a branch by its GitFlow role from its name.
 func roleOf(name, defaultBranch string) string {

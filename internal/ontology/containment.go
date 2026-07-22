@@ -11,9 +11,13 @@ import "github.com/wm-it-25/git-branch-graph/internal/model"
 // by the time we OR it into its parents. One pass over the edges — no per-commit
 // `git --contains` calls.
 //
+// keep, when non-nil, restricts which commits appear in the OUTPUT (the bitset
+// propagation always runs fully, so the answer stays correct). Used by the
+// partial-containment modes to shrink the emitted table on very large repos.
+//
 // Returns commit SHA -> refs containing it. Uses a fixed-width bitset (nrefs
 // bits) per commit, so memory is ~nrefs/8 bytes × ncommits.
-func computeContainment(order []string, parentsOf map[string][]string, refs []model.Ref) map[string][]model.ContainRef {
+func computeContainment(order []string, parentsOf map[string][]string, refs []model.Ref, keep map[string]bool) map[string][]model.ContainRef {
 	words := (len(refs) + 63) / 64
 	if words == 0 {
 		return map[string][]model.ContainRef{}
@@ -47,9 +51,12 @@ func computeContainment(order []string, parentsOf map[string][]string, refs []mo
 		}
 	}
 
-	// Decode bitsets -> ref lists.
+	// Decode bitsets -> ref lists (only for kept commits when a filter is set).
 	out := make(map[string][]model.ContainRef, len(order))
 	for _, sha := range order {
+		if keep != nil && !keep[sha] {
+			continue
+		}
 		bs := bits[sha]
 		var list []model.ContainRef
 		for i, r := range refs {
