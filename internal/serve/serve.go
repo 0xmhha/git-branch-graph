@@ -131,7 +131,12 @@ func (s *Server) handleContainment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := dbc.Query(
-		`SELECT ref_name, ref_type FROM containment WHERE sha=? ORDER BY ref_type, ref_name`, sha)
+		`SELECT r.ref_name, r.ref_type
+		 FROM containment ct
+		 JOIN commits c ON c.id = ct.commit_id
+		 JOIN refs r    ON r.id = ct.ref_id
+		 WHERE c.sha = ?
+		 ORDER BY r.ref_type, r.ref_name`, sha)
 	if err != nil {
 		httpErr(w, http.StatusInternalServerError, err)
 		return
@@ -245,8 +250,12 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 	defer dbc.Close()
 	rows, err := dbc.Query(`SELECT c.sha, c.subject, c.pr_num, c.committed_at
 		FROM commits c
-		WHERE EXISTS (SELECT 1 FROM containment WHERE sha=c.sha AND ref_name=?1)
-		  AND NOT EXISTS (SELECT 1 FROM containment WHERE sha=c.sha AND ref_name=?2)
+		WHERE EXISTS (
+		        SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id
+		        WHERE ct.commit_id=c.id AND r.ref_name=?1)
+		  AND NOT EXISTS (
+		        SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id
+		        WHERE ct.commit_id=c.id AND r.ref_name=?2)
 		ORDER BY c.committed_at DESC LIMIT ?3`, in, notin, limit)
 	if err != nil {
 		httpErr(w, http.StatusInternalServerError, err)
