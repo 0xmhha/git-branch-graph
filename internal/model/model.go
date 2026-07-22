@@ -66,10 +66,21 @@ type Edge struct {
 
 // ---- Ontology output (graph.json / graph.sqlite) ----
 
+// Column is one branch lane in the fixed-column layout. Role drives the left→
+// right order (feature < default < release < hotfix < master < other); Kind
+// drives currency (spine rules / label): default | active | stale | other.
+type Column struct {
+	Name  string
+	Kind  string // "default" | "active" | "stale" | "other"
+	Role  string // "feature" | "default" | "release" | "hotfix" | "master" | "other"
+	Color string
+}
+
 // Graph is the computed ontology: render-ready nodes + edges plus meta.
 type Graph struct {
 	Meta     Snapshot
 	LinkBase string
+	Columns  []Column
 	Nodes    []Node
 	Edges    []GEdge
 	PRs      []PR
@@ -82,6 +93,7 @@ type Graph struct {
 type Node struct {
 	SHA               string
 	Lane              int
+	Col               int // fixed branch column index (into Graph.Columns)
 	Color             string
 	Subject           string
 	Author            string

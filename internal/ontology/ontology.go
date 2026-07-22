@@ -62,9 +62,6 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 
 	containment := computeContainment(order, parentsOf, refs)
 
-	// PR merge/squash classification (offline + optional enrich override).
-	prs, methodOf, ciOf, squashEdges := classifyPRs(commits, commitOf, firstParent, branchOf, linkBase, enriched)
-
 	// Lightweight per-node branch containment (JSON-inlined; tags stay in SQLite).
 	branchContain := make(map[string][]string, len(commits))
 	for sha, list := range containment {
@@ -78,6 +75,40 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 			sort.Strings(bs)
 			branchContain[sha] = bs
 		}
+	}
+
+	// PR merge/squash classification (offline + optional enrich override).
+	prs, methodOf, ciOf, squashEdges := classifyPRs(commits, commitOf, firstParent, branchOf, linkBase, enriched)
+
+	// Fixed branch columns (default → active → stale → other) and per-commit
+	// column assignment: owning branch, else leftmost containing branch, else other.
+	columns, colIdx := computeColumns(refs, commitOf, snap.DefaultBranch)
+	otherCol := len(columns)
+	usedOther := false
+	colOf := func(sha string) int {
+		if bo := branchOf[sha]; bo != "" {
+			if c, ok := colIdx[bo]; ok {
+				return c
+			}
+		}
+		best := -1
+		for _, b := range branchContain[sha] {
+			if c, ok := colIdx[b]; ok && (best < 0 || c < best) {
+				best = c
+			}
+		}
+		if best >= 0 {
+			return best
+		}
+		usedOther = true
+		return otherCol
+	}
+	colBySha := make(map[string]int, len(commits))
+	for _, sha := range order {
+		colBySha[sha] = colOf(sha)
+	}
+	if usedOther {
+		columns = append(columns, model.Column{Name: "(merged-in)", Kind: "other", Role: "other", Color: neutralColor})
 	}
 
 	// Nodes.
@@ -95,6 +126,7 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 		nodes = append(nodes, model.Node{
 			SHA:               sha,
 			Lane:              laneOf[sha],
+			Col:               colBySha[sha],
 			Color:             branchColor(bo, snap.DefaultBranch),
 			Subject:           c.Subject,
 			Author:            c.AuthorName,
@@ -133,6 +165,7 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 	return model.Graph{
 		Meta:        snap,
 		LinkBase:    linkBase,
+		Columns:     columns,
 		Nodes:       nodes,
 		Edges:       gedges,
 		PRs:         prs,

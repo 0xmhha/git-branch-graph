@@ -20,9 +20,16 @@ func WriteJSON(path string, g model.Graph) error {
 		PR     string `json:"pr,omitempty"`
 		Tree   string `json:"tree,omitempty"`
 	}
+	type jColumn struct {
+		Name  string `json:"name"`
+		Kind  string `json:"kind"`
+		Role  string `json:"role"`
+		Color string `json:"color"`
+	}
 	type jNode struct {
 		SHA               string   `json:"sha"`
 		Lane              int      `json:"lane"`
+		Col               int      `json:"col"`
 		Color             string   `json:"color"`
 		Subject           string   `json:"subject"`
 		Author            string   `json:"author"`
@@ -57,9 +64,10 @@ func WriteJSON(path string, g model.Graph) error {
 				Tags     int `json:"tags"`
 			} `json:"counts"`
 		} `json:"meta"`
-		LinkBase string  `json:"linkBase"`
-		Nodes    []jNode `json:"nodes"`
-		Edges    []jEdge `json:"edges"`
+		LinkBase string    `json:"linkBase"`
+		Columns  []jColumn `json:"columns"`
+		Nodes    []jNode   `json:"nodes"`
+		Edges    []jEdge   `json:"edges"`
 	}
 
 	var doc jDoc
@@ -73,6 +81,11 @@ func WriteJSON(path string, g model.Graph) error {
 	doc.Meta.Counts.Tags = g.Meta.TagCount
 	doc.LinkBase = g.LinkBase
 
+	doc.Columns = make([]jColumn, 0, len(g.Columns))
+	for _, c := range g.Columns {
+		doc.Columns = append(doc.Columns, jColumn{Name: c.Name, Kind: c.Kind, Role: c.Role, Color: c.Color})
+	}
+
 	doc.Nodes = make([]jNode, 0, len(g.Nodes))
 	for _, n := range g.Nodes {
 		var refs []jRef
@@ -80,7 +93,7 @@ func WriteJSON(path string, g model.Graph) error {
 			refs = append(refs, jRef{Name: r.Name, Type: r.Type})
 		}
 		doc.Nodes = append(doc.Nodes, jNode{
-			SHA: n.SHA, Lane: n.Lane, Color: n.Color, Subject: n.Subject,
+			SHA: n.SHA, Lane: n.Lane, Col: n.Col, Color: n.Color, Subject: n.Subject,
 			Author: n.Author, CommittedAt: n.CommittedAt, PRNum: n.PRNum,
 			IsMerge: n.IsMerge, MergeMethod: n.MergeMethod, CIState: n.CIState,
 			BranchOf: n.BranchOf, Refs: refs,

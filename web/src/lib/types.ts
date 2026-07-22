@@ -23,9 +23,17 @@ export interface NodeLinks {
   tree?: string
 }
 
+export interface Column {
+  name: string
+  kind: 'default' | 'active' | 'stale' | 'other'
+  role: 'feature' | 'default' | 'release' | 'hotfix' | 'master' | 'other'
+  color: string
+}
+
 export interface GraphNode {
   sha: string
   lane: number
+  col: number
   color: string
   subject: string
   author: string
@@ -59,6 +67,7 @@ export interface Graph {
     counts: { commits: number; branches: number; tags: number }
   }
   linkBase: string
+  columns: Column[]
   nodes: GraphNode[]
   edges: GraphEdge[]
 }
