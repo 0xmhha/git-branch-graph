@@ -12,9 +12,12 @@ import (
 	"github.com/wm-it-25/git-branch-graph/internal/model"
 )
 
+// commits and refs carry an integer id so the large containment table can store
+// two ints per row instead of a repeated 40-char SHA + ref name — the file drops
+// from hundreds of MB to tens.
 const schema = `
 CREATE TABLE commits (
-  sha TEXT PRIMARY KEY, author_name TEXT, author_email TEXT,
+  id INTEGER PRIMARY KEY, sha TEXT UNIQUE NOT NULL, author_name TEXT, author_email TEXT,
   authored_at TEXT, committed_at TEXT, subject TEXT, pr_num INTEGER,
   is_merge INTEGER NOT NULL DEFAULT 0, lane INTEGER, color TEXT, branch_of TEXT
 );
@@ -23,8 +26,8 @@ CREATE TABLE edges (
   edge_type TEXT NOT NULL, PRIMARY KEY (child_sha, parent_sha)
 );
 CREATE TABLE refs (
-  ref_name TEXT PRIMARY KEY, ref_type TEXT NOT NULL, target_sha TEXT NOT NULL,
-  is_default INTEGER NOT NULL DEFAULT 0
+  id INTEGER PRIMARY KEY, ref_name TEXT UNIQUE NOT NULL, ref_type TEXT NOT NULL,
+  target_sha TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE prs (
   pr_num INTEGER PRIMARY KEY, state TEXT, merge_method TEXT, merge_sha TEXT,
@@ -35,9 +38,9 @@ CREATE TABLE checks (
   PRIMARY KEY (sha, context)
 );
 CREATE TABLE containment (
-  sha TEXT NOT NULL, ref_name TEXT NOT NULL, ref_type TEXT NOT NULL,
-  PRIMARY KEY (sha, ref_name)
-);
+  commit_id INTEGER NOT NULL, ref_id INTEGER NOT NULL,
+  PRIMARY KEY (commit_id, ref_id)
+) WITHOUT ROWID;
 CREATE TABLE meta (
   repo_url TEXT, org TEXT, repo TEXT, default_branch TEXT, head_sha TEXT,
   captured_at TEXT, commit_count INTEGER, branch_count INTEGER, tag_count INTEGER
@@ -49,8 +52,7 @@ CREATE INDEX idx_edges_parent ON edges(parent_sha);
 CREATE INDEX idx_edges_child  ON edges(child_sha);
 CREATE INDEX idx_commits_pr   ON commits(pr_num);
 CREATE INDEX idx_commits_time ON commits(committed_at);
-CREATE INDEX idx_contain_ref  ON containment(ref_name);
-CREATE INDEX idx_contain_sha  ON containment(sha);
+CREATE INDEX idx_contain_ref  ON containment(ref_id);
 `
 
 // Write creates path (overwriting) and populates all tables from the graph.
@@ -84,15 +86,18 @@ func Write(path string, g model.Graph, refs []model.Ref, edges []model.Edge) (co
 		}
 	}()
 
-	// commits
+	// commits (integer id = position in g.Nodes + 1)
+	commitID := make(map[string]int, len(g.Nodes))
 	cst, err := tx.Prepare(`INSERT INTO commits
-		(sha,author_name,author_email,authored_at,committed_at,subject,pr_num,is_merge,lane,color,branch_of)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+		(id,sha,author_name,author_email,authored_at,committed_at,subject,pr_num,is_merge,lane,color,branch_of)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return 0, err
 	}
-	for _, n := range g.Nodes {
-		if _, err = cst.Exec(n.SHA, n.Author, "", "", n.CommittedAt, n.Subject,
+	for i, n := range g.Nodes {
+		id := i + 1
+		commitID[n.SHA] = id
+		if _, err = cst.Exec(id, n.SHA, n.Author, "", "", n.CommittedAt, n.Subject,
 			nullInt(n.PRNum), b2i(n.IsMerge), n.Lane, n.Color, nullStr(n.BranchOf)); err != nil {
 			return 0, err
 		}
@@ -112,13 +117,16 @@ func Write(path string, g model.Graph, refs []model.Ref, edges []model.Edge) (co
 	}
 	est.Close()
 
-	// refs
-	rst, err := tx.Prepare(`INSERT INTO refs (ref_name,ref_type,target_sha,is_default) VALUES (?,?,?,?)`)
+	// refs (integer id)
+	refID := make(map[string]int, len(refs))
+	rst, err := tx.Prepare(`INSERT INTO refs (id,ref_name,ref_type,target_sha,is_default) VALUES (?,?,?,?,?)`)
 	if err != nil {
 		return 0, err
 	}
-	for _, r := range refs {
-		if _, err = rst.Exec(r.Name, r.Type, r.TargetSHA, b2i(r.IsDefault)); err != nil {
+	for i, r := range refs {
+		id := i + 1
+		refID[r.Name] = id
+		if _, err = rst.Exec(id, r.Name, r.Type, r.TargetSHA, b2i(r.IsDefault)); err != nil {
 			return 0, err
 		}
 	}
@@ -152,14 +160,22 @@ func Write(path string, g model.Graph, refs []model.Ref, edges []model.Edge) (co
 	}
 	kst.Close()
 
-	// containment (the large table)
-	tst, err := tx.Prepare(`INSERT OR IGNORE INTO containment (sha,ref_name,ref_type) VALUES (?,?,?)`)
+	// containment (the large table) — integer (commit_id, ref_id) pairs
+	tst, err := tx.Prepare(`INSERT OR IGNORE INTO containment (commit_id,ref_id) VALUES (?,?)`)
 	if err != nil {
 		return 0, err
 	}
 	for sha, list := range g.Containment {
+		cid, ok := commitID[sha]
+		if !ok {
+			continue
+		}
 		for _, cr := range list {
-			if _, err = tst.Exec(sha, cr.Name, cr.Type); err != nil {
+			rid, ok := refID[cr.Name]
+			if !ok {
+				continue
+			}
+			if _, err = tst.Exec(cid, rid); err != nil {
 				return 0, err
 			}
 			containRows++
