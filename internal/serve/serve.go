@@ -33,6 +33,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}/containment", s.handleContainment)
 	mux.HandleFunc("GET /api/runs/{id}/prs", s.handlePRs)
 	mux.HandleFunc("GET /api/runs/{id}/diff", s.handleDiff)
+	mux.HandleFunc("POST /api/ingest", s.handleIngestStart)
+	mux.HandleFunc("GET /api/ingest/{jobId}/events", s.handleIngestEvents)
 
 	switch {
 	case s.WebFS != nil:
@@ -322,7 +324,8 @@ func withCORS(h http.Handler) http.Handler {
 // withGzip compresses text responses (graph.json is ~11MB raw, ~1.4MB gzipped).
 func withGzip(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		// Never gzip Server-Sent Events — buffering would defeat live flushing.
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") || strings.HasSuffix(r.URL.Path, "/events") {
 			h.ServeHTTP(w, r)
 			return
 		}
