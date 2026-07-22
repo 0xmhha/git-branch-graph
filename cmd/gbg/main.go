@@ -30,6 +30,7 @@ import (
 	"github.com/wm-it-25/git-branch-graph/internal/ontology"
 	"github.com/wm-it-25/git-branch-graph/internal/paths"
 	"github.com/wm-it-25/git-branch-graph/internal/serve"
+	"github.com/wm-it-25/git-branch-graph/internal/webui"
 )
 
 func main() {
@@ -76,13 +77,17 @@ func runServe(args []string) error {
 	addr := fs.String("addr", ":8080", "listen address")
 	_ = fs.Parse(args)
 
-	wd := *webDir
-	if _, err := os.Stat(wd); err != nil {
-		wd = "" // no built SPA yet — API only
+	srv := &serve.Server{DataDir: *dataDir}
+	webSrc := "none (API only)"
+	if fsys, ok := webui.FS(); ok {
+		srv.WebFS = fsys
+		webSrc = "embedded"
+	} else if _, err := os.Stat(*webDir); err == nil {
+		srv.WebDir = *webDir
+		webSrc = *webDir
 	}
-	srv := &serve.Server{DataDir: *dataDir, WebDir: wd}
 
-	fmt.Printf("gbg serve on http://localhost%s  (data=%s web=%q)\n", *addr, *dataDir, wd)
+	fmt.Printf("gbg serve on http://localhost%s  (data=%s web=%s)\n", *addr, *dataDir, webSrc)
 	fmt.Printf("  GET /api/runs\n  GET /api/runs/{id}/graph.json\n  GET /api/runs/{id}/containment?sha=...\n")
 	return http.ListenAndServe(*addr, srv.Handler())
 }

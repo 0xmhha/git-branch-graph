@@ -4,9 +4,11 @@
 package serve
 
 import (
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,7 +21,8 @@ import (
 // Server holds the paths it serves from.
 type Server struct {
 	DataDir string // root containing run folders + .repos
-	WebDir  string // built SPA (web/dist); may be empty
+	WebDir  string // built SPA on disk (web/dist); used if WebFS is nil
+	WebFS   fs.FS  // embedded SPA; takes precedence over WebDir
 }
 
 // Handler builds the HTTP routes (Go 1.22+ pattern mux).
@@ -31,10 +34,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}/prs", s.handlePRs)
 	mux.HandleFunc("GET /api/runs/{id}/diff", s.handleDiff)
 
-	if s.WebDir != "" {
+	switch {
+	case s.WebFS != nil:
+		mux.Handle("/", spaFromFS(s.WebFS))
+	case s.WebDir != "":
 		mux.Handle("/", spaFileServer(s.WebDir))
 	}
-	return withCORS(mux)
+	return withCORS(withGzip(mux))
 }
 
 type runSummary struct {
@@ -289,11 +295,61 @@ func spaFileServer(webDir string) http.Handler {
 	})
 }
 
+// spaFromFS serves the embedded SPA, falling back to index.html for unknown
+// (client-side) routes.
+func spaFromFS(fsys fs.FS) http.Handler {
+	fileServer := http.FileServerFS(fsys)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
+		if p == "" {
+			p = "index.html"
+		}
+		if _, err := fs.Stat(fsys, p); err != nil {
+			http.ServeFileFS(w, r, fsys, "index.html")
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
 func withCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		h.ServeHTTP(w, r)
 	})
+}
+
+// withGzip compresses text responses (graph.json is ~11MB raw, ~1.4MB gzipped).
+func withGzip(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			h.ServeHTTP(w, r)
+			return
+		}
+		// Range + gzip don't mix; drop it so ServeFile returns the full body.
+		r.Header.Del("Range")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		h.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, gz: gz}, r)
+	})
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+// WriteHeader strips the pre-compression Content-Length (set by ServeFile)
+// before the status line is committed.
+func (g *gzipResponseWriter) WriteHeader(code int) {
+	g.Header().Del("Content-Length")
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	return g.gz.Write(b)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

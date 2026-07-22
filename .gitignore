@@ -2,8 +2,13 @@
 node_modules/
 # build
 .next/
-dist/
+web/dist/
 bin/
+# embedded SPA build output (staged by `make web`); keep the placeholder.
+# Note: use a file glob (not a bare `dist/`) so the negation below can re-include
+# .gitkeep — an excluded *directory* cannot have its children re-included.
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
 # data (생성물: bare mirror 캐시 + 실행별 산출 폴더)
 data/.repos/
 data/*/
