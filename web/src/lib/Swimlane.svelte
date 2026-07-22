@@ -352,7 +352,10 @@
         <g role="listitem" onmouseenter={(ev) => onEnter(n, ev)} onmouseleave={onLeave} opacity={dim ? 0.16 : 1}>
           <rect x="0" y={cy - rowH / 2} width={totalW} height={rowH} fill="transparent" />
           {#if n.prNum}
-            <text x="8" y={cy + 3.5} font-size="10.5" font-family="ui-monospace, monospace" fill={n.mergeMethod === 'merge' ? '#58a6ff' : '#a371f7'} font-weight="600">PR #{n.prNum}</text>
+            <text
+              x="8" y={cy + 3.5} font-size="10.5" font-family="ui-monospace, monospace" font-weight="600"
+              fill={n.prVerified === 'unverified' ? '#d29922' : n.mergeMethod === 'merge' ? '#58a6ff' : '#a371f7'}
+            >PR #{n.prNum}{n.prVerified === 'unverified' ? '?' : ''}</text>
           {:else}
             <text x="8" y={cy + 3.5} font-size="10" font-family="ui-monospace, monospace" fill="#8b949e">{n.sha.slice(0, 7)}</text>
           {/if}
@@ -391,7 +394,12 @@
     <div class="mt-1 font-medium">{hovered.subject}</div>
     <div class="mt-0.5 text-neutral-500 flex items-center gap-1.5 flex-wrap">
       <span>{hovered.author} · {new Date(hovered.committedAt).toLocaleString()}</span>
-      {#if hovered.prNum}<span>· PR #{hovered.prNum}</span>{/if}
+      {#if hovered.prNum}
+        <span>· PR #{hovered.prNum}</span>
+        {#if hovered.prVerified === 'unverified'}
+          <span class="text-amber-600" title="This #number was not found as a PR in this repo — likely an upstream/fork reference; no link.">unverified</span>
+        {/if}
+      {/if}
       {#if hovered.mergeMethod}
         <span
           class="px-1 rounded text-[10px] font-semibold"

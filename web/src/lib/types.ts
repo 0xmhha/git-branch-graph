@@ -42,6 +42,7 @@ export interface GraphNode {
   isMerge: boolean
   mergeMethod?: string
   ciState?: string
+  prVerified?: 'verified' | 'unverified'
   branchOf?: string
   refs?: NodeRef[]
   containedBranches?: string[]
