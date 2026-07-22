@@ -116,15 +116,21 @@ git -C <repo>.git log --all --no-abbrev --date=iso-strict \
 ---
 
 ## 디렉토리 구조 (프로젝트)
+코어는 Go(표준 레이아웃), 웹은 별도 `web/`(Node). 둘은 `data/`로만 만난다.
 ```
 git-branch-graph/
-├─ src/
-│  ├─ acquire/      # [1] clone/fetch
-│  ├─ extract/      # [2] git 1-pass → raw csv
-│  ├─ enrich/       # [3] GitHub GraphQL 보강
-│  ├─ ontology/     # [4] 레인·색·판별·containment → json+sqlite
-│  ├─ db/           # sqlite 스키마/마이그레이션/쿼리
-│  └─ web/          # [5] Next.js GUI (SVG 렌더)
+├─ cmd/gbg/           # Go CLI 진입점 (ingest 등 서브커맨드)
+├─ internal/
+│  ├─ acquire/        # [1] clone/fetch (bare, blobless)
+│  ├─ extract/        # [2] git 1-pass → raw csv
+│  ├─ enrich/         # [3] GitHub GraphQL 보강
+│  ├─ ontology/       # [4] 레인·색·판별·containment
+│  ├─ db/             # sqlite(modernc) 스키마/마이그레이션/쿼리
+│  ├─ model/          # 공통 타입(Commit, Ref, Edge, PR ...)
+│  ├─ gitcmd/         # git 서브프로세스 헬퍼
+│  ├─ csvw/           # RFC4180 CSV writer
+│  └─ paths/          # 슬러그·content-address 폴더 네이밍
+├─ web/               # [5] Next.js 대시보드 (data/ 읽어 SVG 렌더)
 ├─ data/
 │  ├─ .repos/                      # bare mirror 캐시 (gitignore)
 │  └─ <org>__<repo>__<branch>__<sha7>/
@@ -132,7 +138,8 @@ git-branch-graph/
 │     ├─ graph.json
 │     ├─ graph.sqlite
 │     └─ meta.json
-└─ docs/  (설계 문서 링크 또는 사본)
+├─ go.mod
+└─ docs/  (설계 문서 사본)
 ```
 
 ## 모듈 경계 원칙

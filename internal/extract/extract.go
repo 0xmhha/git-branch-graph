@@ -41,22 +41,26 @@ type Result struct {
 	RawDir   string
 }
 
-// Run scans the bare repo and writes raw/*.csv under outDir.
-func Run(bareDir, outDir, defaultBranch string) (Result, error) {
+// Scan performs the git 1-pass read without writing anything, returning the
+// in-memory raw layer. Callers that also want CSVs call WriteCSVs.
+func Scan(bareDir, defaultBranch string) (commits []model.Commit, refs []model.Ref, edges []model.Edge, err error) {
+	commits, edges, err = scanCommits(bareDir)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	refs, _, _, err = scanRefs(bareDir, defaultBranch)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return commits, refs, edges, nil
+}
+
+// WriteCSVs writes the raw layer to outDir/raw/*.csv.
+func WriteCSVs(outDir string, commits []model.Commit, refs []model.Ref, edges []model.Edge) (Result, error) {
 	rawDir := filepath.Join(outDir, "raw")
 	if err := os.MkdirAll(rawDir, 0o755); err != nil {
 		return Result{}, err
 	}
-
-	commits, edges, err := scanCommits(bareDir)
-	if err != nil {
-		return Result{}, err
-	}
-	refs, branches, tags, err := scanRefs(bareDir, defaultBranch)
-	if err != nil {
-		return Result{}, err
-	}
-
 	if err := writeCommits(filepath.Join(rawDir, "commits.csv"), commits); err != nil {
 		return Result{}, err
 	}
@@ -66,8 +70,24 @@ func Run(bareDir, outDir, defaultBranch string) (Result, error) {
 	if err := writeRefs(filepath.Join(rawDir, "refs.csv"), refs); err != nil {
 		return Result{}, err
 	}
-
+	branches, tags := 0, 0
+	for _, r := range refs {
+		if r.Type == "tag" {
+			tags++
+		} else {
+			branches++
+		}
+	}
 	return Result{Commits: len(commits), Branches: branches, Tags: tags, RawDir: rawDir}, nil
+}
+
+// Run scans the bare repo and writes raw/*.csv under outDir.
+func Run(bareDir, outDir, defaultBranch string) (Result, error) {
+	commits, refs, edges, err := Scan(bareDir, defaultBranch)
+	if err != nil {
+		return Result{}, err
+	}
+	return WriteCSVs(outDir, commits, refs, edges)
 }
 
 // scanCommits walks the full graph once and builds commits + parent edges.

@@ -20,8 +20,11 @@ import (
 	"time"
 
 	"github.com/wm-it-25/git-branch-graph/internal/acquire"
+	"github.com/wm-it-25/git-branch-graph/internal/db"
 	"github.com/wm-it-25/git-branch-graph/internal/extract"
+	"github.com/wm-it-25/git-branch-graph/internal/loader"
 	"github.com/wm-it-25/git-branch-graph/internal/model"
+	"github.com/wm-it-25/git-branch-graph/internal/ontology"
 	"github.com/wm-it-25/git-branch-graph/internal/paths"
 )
 
@@ -36,6 +39,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
+	case "ontology":
+		if err := runOntology(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -46,7 +54,41 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "gbg ingest <github-url-or-local-path> [--data-dir dir] [--default-branch b] [--force]")
+	fmt.Fprintln(os.Stderr, "gbg ingest   <github-url-or-local-path> [--data-dir dir] [--default-branch b] [--force]")
+	fmt.Fprintln(os.Stderr, "gbg ontology <run-dir>   # recompute graph.json + graph.sqlite from raw/*.csv")
+}
+
+// buildOntology computes the graph and writes graph.json + graph.sqlite.
+func buildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge) error {
+	g := ontology.Build(snap, commits, refs, edges)
+	if err := ontology.WriteJSON(filepath.Join(runDir, "graph.json"), g); err != nil {
+		return fmt.Errorf("graph.json: %w", err)
+	}
+	rows, err := db.Write(filepath.Join(runDir, "graph.sqlite"), g, refs, edges)
+	if err != nil {
+		return fmt.Errorf("graph.sqlite: %w", err)
+	}
+	fmt.Printf("      nodes=%d edges=%d containment=%d\n", len(g.Nodes), len(g.Edges), rows)
+	return nil
+}
+
+// runOntology recomputes the ontology outputs for an existing run folder.
+func runOntology(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: gbg ontology <run-dir>")
+	}
+	runDir := args[0]
+	fmt.Printf("[ontology] load %s\n", runDir)
+	snap, commits, refs, edges, err := loader.Load(runDir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("      commits=%d refs=%d edges=%d\n", len(commits), len(refs), len(edges))
+	if err := buildOntology(runDir, snap, commits, refs, edges); err != nil {
+		return err
+	}
+	fmt.Printf("done: %s\n", runDir)
+	return nil
 }
 
 func runIngest(args []string) error {
@@ -82,14 +124,17 @@ func runIngest(args []string) error {
 		}
 	}
 
-	fmt.Printf("[2/3] extract  git 1-pass -> raw/*.csv\n")
-	res, err := extract.Run(acq.BareDir, runDir, acq.DefaultBranch)
+	fmt.Printf("[2/4] extract  git 1-pass -> raw/*.csv\n")
+	commits, refs, edges, err := extract.Scan(acq.BareDir, acq.DefaultBranch)
+	if err != nil {
+		return err
+	}
+	res, err := extract.WriteCSVs(runDir, commits, refs, edges)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("      commits=%d branches=%d tags=%d\n", res.Commits, res.Branches, res.Tags)
 
-	fmt.Printf("[3/3] meta     meta.json\n")
 	snap := model.Snapshot{
 		Ref:           ref,
 		DefaultBranch: acq.DefaultBranch,
@@ -103,6 +148,12 @@ func runIngest(args []string) error {
 		return err
 	}
 
+	fmt.Printf("[3/4] ontology lanes/colors/containment -> graph.json + graph.sqlite\n")
+	if err := buildOntology(runDir, snap, commits, refs, edges); err != nil {
+		return err
+	}
+
+	fmt.Printf("[4/4] meta     meta.json\n")
 	fmt.Printf("done: %s\n", runDir)
 	return nil
 }

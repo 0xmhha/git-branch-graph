@@ -49,3 +49,61 @@ type Edge struct {
 	ParentIndex int
 	Type        string // "commit" | "merge" (refined later to squash|cherry)
 }
+
+// ---- Ontology output (graph.json / graph.sqlite) ----
+
+// Graph is the computed ontology: render-ready nodes + edges plus meta.
+type Graph struct {
+	Meta     Snapshot
+	LinkBase string
+	Nodes    []Node
+	Edges    []GEdge
+	// Containment is the full commit->ref membership set (SQLite only; too large
+	// to inline in JSON). Keyed by commit SHA -> list of refs containing it.
+	Containment map[string][]ContainRef
+}
+
+// Node is a render-ready commit (one graph vertex).
+type Node struct {
+	SHA               string
+	Lane              int
+	Color             string
+	Subject           string
+	Author            string
+	CommittedAt       string
+	PRNum             string
+	IsMerge           bool
+	BranchOf          string    // first-parent owning branch ("" if none)
+	Refs              []NodeRef // branch/tag decorations pointing here
+	ContainedBranches []string  // lightweight; inlined in JSON
+	Links             NodeLinks
+}
+
+// NodeRef is a branch/tag whose tip is exactly this commit.
+type NodeRef struct {
+	Name string
+	Type string // "branch" | "tag"
+}
+
+// NodeLinks holds pre-assembled GitHub URLs for a node.
+type NodeLinks struct {
+	Commit string
+	PR     string // "" if no PR
+	Tree   string // "" if no owning branch
+}
+
+// GEdge is a render edge with resolved lane endpoints.
+type GEdge struct {
+	Child       string
+	Parent      string
+	ParentIndex int
+	Type        string
+	FromLane    int
+	ToLane      int
+}
+
+// ContainRef is one (ref) that contains a commit.
+type ContainRef struct {
+	Name string
+	Type string // "branch" | "tag"
+}
