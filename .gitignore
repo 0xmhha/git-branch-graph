@@ -1,0 +1,18 @@
+# deps
+node_modules/
+# build
+.next/
+dist/
+# data (생성물: bare mirror 캐시 + 실행별 산출 폴더)
+data/.repos/
+data/*/
+# 단, data 폴더 구조는 유지
+!data/.gitkeep
+# env / secrets
+.env
+.env.local
+# os
+.DS_Store
+# sqlite 임시
+*.sqlite-journal
+*.sqlite-wal
