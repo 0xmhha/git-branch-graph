@@ -31,6 +31,8 @@ type Options struct {
 	DefaultBranch string // override (local clones)
 	Repo          string // canonical owner/name override
 	NoEnrich      bool
+	RefreshEnrich bool   // ignore the per-repo enrich cache and re-query all PRs
+	Containment   string // "" / "full" | "pr-only" | "recent:N"
 	Force         bool
 }
 
@@ -114,12 +116,16 @@ func Run(opts Options, prog Progress) (Result, error) {
 	var enriched map[string]model.PR
 	if !opts.NoEnrich {
 		prog("enrich", 62, "Fetching PR metadata…")
-		enriched = tryEnrich(ref, commits, prog)
+		cachePath := filepath.Join(opts.DataDir, ".repos", ref.Slug+"__enrich.json")
+		enriched = tryEnrich(ref, commits, cachePath, opts.RefreshEnrich, prog)
 	}
 
 	// (5) Ontology — lanes, columns, containment, classification.
 	prog("ontology", 85, "Computing branch graph…")
-	if err := BuildOntology(runDir, snap, commits, refs, edges, enriched, cherries); err != nil {
+	if opts.Containment != "" && opts.Containment != "full" {
+		prog("ontology", 85, "Containment limited to "+opts.Containment)
+	}
+	if err := BuildOntology(runDir, snap, commits, refs, edges, enriched, cherries, opts.Containment); err != nil {
 		return Result{}, err
 	}
 
@@ -146,8 +152,8 @@ func existingRun(input, dataDir string) (id, dir string, ok bool) {
 }
 
 // BuildOntology computes and writes graph.json + graph.sqlite + prs.csv.
-func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherries map[string]string) error {
-	g := ontology.Build(snap, commits, refs, edges, enriched, cherries)
+func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherries map[string]string, containMode string) error {
+	g := ontology.Build(snap, commits, refs, edges, enriched, cherries, containMode)
 	if err := ontology.WriteJSON(filepath.Join(runDir, "graph.json"), g); err != nil {
 		return fmt.Errorf("graph.json: %w", err)
 	}
@@ -163,7 +169,7 @@ func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, r
 // tryEnrich returns nil only when enrich did NOT run (no token). When a token is
 // present it returns a non-nil (possibly empty) map, which signals downstream
 // that PR verification is meaningful.
-func tryEnrich(ref model.RepoRef, commits []model.Commit, prog Progress) map[string]model.PR {
+func tryEnrich(ref model.RepoRef, commits []model.Commit, cachePath string, refresh bool, prog Progress) map[string]model.PR {
 	token := enrich.Token()
 	if token == "" {
 		return nil
@@ -177,8 +183,12 @@ func tryEnrich(ref model.RepoRef, commits []model.Commit, prog Progress) map[str
 	if len(nums) == 0 {
 		return map[string]model.PR{} // ran, nothing to fetch
 	}
-	prog("enrich", 64, fmt.Sprintf("Fetching %d PRs from GitHub…", len(nums)))
-	prs, _ := enrich.Fetch(ref.Org, ref.Repo, token, nums)
+	if pending := enrich.PendingCount(nums, cachePath, refresh); pending > 0 {
+		prog("enrich", 64, fmt.Sprintf("Fetching %d new PRs from GitHub…", pending))
+	} else {
+		prog("enrich", 64, "PR metadata cached")
+	}
+	prs, _ := enrich.FetchCached(ref.Org, ref.Repo, token, nums, cachePath, refresh)
 	if prs == nil {
 		prs = map[string]model.PR{}
 	}

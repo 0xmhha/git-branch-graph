@@ -50,6 +50,17 @@ func Ensure(dataDir string, ref model.RepoRef, defaultOverride string) (Result, 
 	}
 
 	def := defaultOverride
+	// For a local-path source, the bare clone's HEAD follows the source's checked-
+	// out branch (e.g. a release branch), not the repo's default. Prefer the
+	// source's own origin/HEAD when the clone actually contains that branch.
+	if def == "" && isLocalDir(ref.URL) {
+		if h, err := gitcmd.Run(ref.URL, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+			cand := strings.TrimPrefix(strings.TrimSpace(h), "origin/")
+			if _, err := gitcmd.Run(bare, "rev-parse", "--verify", cand); err == nil {
+				def = cand
+			}
+		}
+	}
 	if def == "" {
 		// clone HEAD symref = remote default branch (for remote URLs).
 		if head, err := gitcmd.Run(bare, "symbolic-ref", "--short", "HEAD"); err == nil {
@@ -66,6 +77,15 @@ func Ensure(dataDir string, ref model.RepoRef, defaultOverride string) (Result, 
 	}
 
 	return Result{BareDir: bare, DefaultBranch: def, HeadSHA: strings.TrimSpace(headSHA)}, nil
+}
+
+// isLocalDir reports whether input is a local directory (not a remote URL).
+func isLocalDir(input string) bool {
+	if strings.Contains(input, "://") || strings.HasPrefix(input, "git@") {
+		return false
+	}
+	fi, err := os.Stat(input)
+	return err == nil && fi.IsDir()
 }
 
 // valid reports whether bare is an existing repo with a resolvable HEAD.
