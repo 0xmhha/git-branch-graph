@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchRuns } from './api'
+  import { fetchRuns, mode } from './api'
   import type { RunSummary } from './types'
   import ProgressModal from './ProgressModal.svelte'
 
@@ -10,8 +10,10 @@
   let jobId = $state('')
   let starting = $state(false)
   let startErr = $state('')
+  let isStatic = $state(false) // static export: no server to run new analyses
 
   $effect(() => {
+    mode().then((m) => (isStatic = m === 'static'))
     fetchRuns()
       .then((r) => (runs = r))
       .catch(() => {})
@@ -75,7 +77,10 @@
       See branches, merges, squashes and releases across any repository — as fixed columns on a timeline.
     </p>
 
-    <!-- the input -->
+    <!-- the input (server mode only; a static export can't run new analyses) -->
+    {#if isStatic}
+    <p class="mt-6 text-xs text-neutral-400">Static export — pick a pre-analyzed repository below.</p>
+    {:else}
     <div class="mt-8 w-full">
       <div class="flex items-stretch rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition">
         <input
@@ -101,6 +106,7 @@
       </div>
       {#if startErr}<p class="mt-1 text-xs text-red-600 text-left">{startErr}</p>{/if}
     </div>
+    {/if}
 
     <!-- recent analyses -->
     {#if runs.length}

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/wm-it-25/git-branch-graph/internal/export"
 	"github.com/wm-it-25/git-branch-graph/internal/loader"
 	"github.com/wm-it-25/git-branch-graph/internal/pipeline"
 	"github.com/wm-it-25/git-branch-graph/internal/serve"
@@ -44,6 +45,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
+	case "export":
+		if err := runExport(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -57,6 +63,27 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "gbg ingest   <github-url-or-local-path> [--data-dir dir] [--default-branch b] [--force]")
 	fmt.Fprintln(os.Stderr, "gbg ontology <run-dir>   # recompute graph.json + graph.sqlite from raw/*.csv")
 	fmt.Fprintln(os.Stderr, "gbg serve    [--data-dir dir] [--web-dir web/dist] [--addr :8080]")
+	fmt.Fprintln(os.Stderr, "gbg export   <out-dir> [--data-dir dir] [--run id]   # static site (no server needed)")
+}
+
+// runExport writes a static, server-less site (SPA + data + sql.js queries).
+func runExport(args []string) error {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	dataDir := fs.String("data-dir", "./data", "run folders root")
+	run := fs.String("run", "", "export only this run id (default: all)")
+	out, rest := splitPositional(args)
+	if out == "" {
+		return fmt.Errorf("usage: gbg export <out-dir> [--data-dir dir] [--run id]")
+	}
+	_ = fs.Parse(rest)
+
+	n, err := export.Export(*dataDir, out, *run)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("exported %d run(s) to %s\n", n, out)
+	fmt.Printf("serve it with any static host, e.g.:  cd %s && python3 -m http.server\n", out)
+	return nil
 }
 
 // runServe starts the HTTP backend.
