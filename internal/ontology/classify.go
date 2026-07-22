@@ -14,12 +14,16 @@ import "github.com/wm-it-25/git-branch-graph/internal/model"
 //   - method[sha]  : merge method attributed to that landing commit
 //   - ciOf[sha]    : CI rollup state for that landing commit (enriched only)
 //   - squashEdges  : set of "child|parent" first-parent edges to mark as squash
+// enrichRan is true when the enrich stage actually queried GitHub (a token was
+// present). Only then can a PR be classified verified/unverified; otherwise its
+// status is unknown ("").
 func classifyPRs(commits []model.Commit, commitOf map[string]*model.Commit,
 	firstParent map[string]string, branchOf map[string]string, linkBase string,
-	enriched map[string]model.PR) (prs []model.PR, method, ciOf map[string]string, squashEdges map[string]bool) {
+	enriched map[string]model.PR, enrichRan bool) (prs []model.PR, method, ciOf, verifiedOf map[string]string, squashEdges map[string]bool) {
 
 	method = map[string]string{}
 	ciOf = map[string]string{}
+	verifiedOf = map[string]string{}
 	squashEdges = map[string]bool{}
 
 	for i := range commits {
@@ -40,8 +44,20 @@ func classifyPRs(commits []model.Commit, commitOf map[string]*model.Commit,
 			pr.MergeMethod = "squash"
 		}
 
+		// Verification: only meaningful once enrich has run. A PR present in the
+		// enriched set is confirmed to exist in this repo; one that is absent was
+		// likely an upstream/fork PR number carried in the subject.
+		e, enrichedHit := enriched[c.PRNum]
+		if enrichRan {
+			if enrichedHit {
+				verifiedOf[c.SHA] = "verified"
+			} else {
+				verifiedOf[c.SHA] = "unverified"
+			}
+		}
+
 		// Enrich override (authoritative when present).
-		if e, ok := enriched[c.PRNum]; ok {
+		if enrichedHit {
 			if e.State != "" {
 				pr.State = e.State
 			}
@@ -69,5 +85,5 @@ func classifyPRs(commits []model.Commit, commitOf map[string]*model.Commit,
 		}
 		prs = append(prs, pr)
 	}
-	return prs, method, ciOf, squashEdges
+	return prs, method, ciOf, verifiedOf, squashEdges
 }

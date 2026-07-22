@@ -156,6 +156,9 @@ func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, r
 	return nil
 }
 
+// tryEnrich returns nil only when enrich did NOT run (no token). When a token is
+// present it returns a non-nil (possibly empty) map, which signals downstream
+// that PR verification is meaningful.
 func tryEnrich(ref model.RepoRef, commits []model.Commit, prog Progress) map[string]model.PR {
 	token := enrich.Token()
 	if token == "" {
@@ -168,10 +171,13 @@ func tryEnrich(ref model.RepoRef, commits []model.Commit, prog Progress) map[str
 		}
 	}
 	if len(nums) == 0 {
-		return nil
+		return map[string]model.PR{} // ran, nothing to fetch
 	}
 	prog("enrich", 64, fmt.Sprintf("Fetching %d PRs from GitHub…", len(nums)))
 	prs, _ := enrich.Fetch(ref.Org, ref.Repo, token, nums)
+	if prs == nil {
+		prs = map[string]model.PR{}
+	}
 	return prs
 }
 

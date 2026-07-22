@@ -102,6 +102,7 @@ type Node struct {
 	IsMerge           bool
 	MergeMethod       string    // "merge" | "squash" | "rebase" | "" — landing method
 	CIState           string    // PR CI rollup ("" if unknown)
+	PRVerified        string    // "verified" | "unverified" | "" (no PR / enrich not run)
 	BranchOf          string    // first-parent owning branch ("" if none)
 	Refs              []NodeRef // branch/tag decorations pointing here
 	ContainedBranches []string  // lightweight; inlined in JSON

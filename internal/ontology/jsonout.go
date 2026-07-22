@@ -38,6 +38,7 @@ func WriteJSON(path string, g model.Graph) error {
 		IsMerge           bool     `json:"isMerge"`
 		MergeMethod       string   `json:"mergeMethod,omitempty"`
 		CIState           string   `json:"ciState,omitempty"`
+		PRVerified        string   `json:"prVerified,omitempty"`
 		BranchOf          string   `json:"branchOf,omitempty"`
 		Refs              []jRef   `json:"refs,omitempty"`
 		ContainedBranches []string `json:"containedBranches,omitempty"`
@@ -96,7 +97,8 @@ func WriteJSON(path string, g model.Graph) error {
 			SHA: n.SHA, Lane: n.Lane, Col: n.Col, Color: n.Color, Subject: n.Subject,
 			Author: n.Author, CommittedAt: n.CommittedAt, PRNum: n.PRNum,
 			IsMerge: n.IsMerge, MergeMethod: n.MergeMethod, CIState: n.CIState,
-			BranchOf: n.BranchOf, Refs: refs,
+			PRVerified: n.PRVerified,
+			BranchOf:   n.BranchOf, Refs: refs,
 			ContainedBranches: n.ContainedBranches,
 			Links:             jLinks{Commit: n.Links.Commit, PR: n.Links.PR, Tree: n.Links.Tree},
 		})

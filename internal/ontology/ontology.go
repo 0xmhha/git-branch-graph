@@ -78,7 +78,8 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 	}
 
 	// PR merge/squash classification (offline + optional enrich override).
-	prs, methodOf, ciOf, squashEdges := classifyPRs(commits, commitOf, firstParent, branchOf, linkBase, enriched)
+	prs, methodOf, ciOf, verifiedOf, squashEdges := classifyPRs(
+		commits, commitOf, firstParent, branchOf, linkBase, enriched, enriched != nil)
 
 	// Fixed branch columns (default → active → stale → other) and per-commit
 	// column assignment: owning branch, else leftmost containing branch, else other.
@@ -117,7 +118,10 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 		c := commitOf[sha]
 		bo := branchOf[sha]
 		links := model.NodeLinks{Commit: linkBase + "/commit/" + sha}
-		if c.PRNum != "" {
+		// Link the PR only when it isn't known-bad: a verified PR, or an unknown
+		// one (enrich didn't run). An "unverified" PR number is likely upstream,
+		// so its /pull/N link would be wrong — omit it.
+		if c.PRNum != "" && verifiedOf[sha] != "unverified" {
 			links.PR = linkBase + "/pull/" + c.PRNum
 		}
 		if bo != "" {
@@ -135,6 +139,7 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 			IsMerge:           c.IsMerge,
 			MergeMethod:       methodOf[sha],
 			CIState:           ciOf[sha],
+			PRVerified:        verifiedOf[sha],
 			BranchOf:          bo,
 			Refs:              refsAt[sha],
 			ContainedBranches: branchContain[sha],
