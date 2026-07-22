@@ -4,57 +4,89 @@
 
   let { graph, runId }: { graph: Graph; runId: string } = $props()
 
-  // Layout constants.
-  const rowH = 24
-  const laneW = 16
-  const padL = 20
-  const padT = 14
-  const nodeR = 4.5
-  const buffer = 24 // extra rows rendered above/below the viewport
+  // Fixed per-branch columns (from the backend), X = column, Y = time.
+  const rowH = 26
+  const colW = 160
+  const gutterW = 108
+  const nodeR = 5
+  const padT = 18
+  const buffer = 28
 
-  // Index maps + geometry (recomputed when graph changes).
+  const columns = $derived(graph.columns)
+  const ncols = $derived(columns.length)
+  const otherIdx = $derived(columns.findIndex((c) => c.kind === 'other'))
+
   const indexOf = $derived.by(() => {
     const m = new Map<string, number>()
     graph.nodes.forEach((n, i) => m.set(n.sha, i))
     return m
   })
-  const maxLane = $derived(graph.nodes.reduce((mx, n) => Math.max(mx, n.lane), 0))
-  const labelX = $derived(padL + (maxLane + 1) * laneW + 12)
+
+  const colX = (c: number) => gutterW + c * colW + colW / 2
+  const y = (i: number) => padT + i * rowH
+  const totalW = $derived(gutterW + ncols * colW)
   const totalH = $derived(padT * 2 + graph.nodes.length * rowH)
 
-  // Precompute edge row indices once per graph.
+  // Vertical extent (row range) of each column.
+  const extent = $derived.by(() => {
+    const min = new Array(ncols).fill(Infinity)
+    const max = new Array(ncols).fill(-Infinity)
+    graph.nodes.forEach((n, i) => {
+      if (i < min[n.col]) min[n.col] = i
+      if (i > max[n.col]) max[n.col] = i
+    })
+    return { min, max }
+  })
+
+  // Spine geometry per column, applying the drawing rules:
+  //  - default / active: line reaches the header (y=0) down to the oldest commit.
+  //  - stale:            line spans only its commit extent.
+  //  - other:            no spine (unrelated merged-in commits; dots only).
+  const spines = $derived.by(() =>
+    columns
+      .map((col, c) => {
+        if (extent.max[c] < extent.min[c]) return null
+        if (col.kind === 'other') return null
+        const top = col.kind === 'default' || col.kind === 'active' ? 0 : y(extent.min[c])
+        return { c, x: colX(c), y1: top, y2: y(extent.max[c]), color: col.color }
+      })
+      .filter((s): s is { c: number; x: number; y1: number; y2: number; color: string } => s !== null),
+  )
+
+  // Edges resolved to rows + columns.
   const edgeRows = $derived.by(() =>
-    graph.edges.map((e) => ({
-      e,
-      ci: indexOf.get(e.child) ?? -1,
-      pi: indexOf.get(e.parent) ?? -1,
-    })),
-  )
-
-  const x = (lane: number) => padL + lane * laneW
-  const y = (idx: number) => padT + idx * rowH
-
-  // Virtualization state.
-  let scrollTop = $state(0)
-  let viewportH = $state(600)
-  let scroller = $state<HTMLDivElement | null>(null)
-
-  const visStart = $derived(Math.max(0, Math.floor(scrollTop / rowH) - buffer))
-  const visEnd = $derived(
-    Math.min(graph.nodes.length, Math.ceil((scrollTop + viewportH) / rowH) + buffer),
-  )
-  const visNodes = $derived(graph.nodes.slice(visStart, visEnd))
-  const visEdges = $derived(
-    edgeRows.filter(({ ci, pi }) => {
-      if (ci < 0 || pi < 0) return false
-      const lo = Math.min(ci, pi)
-      const hi = Math.max(ci, pi)
-      return !(hi < visStart || lo > visEnd)
+    graph.edges.map((e) => {
+      const ci = indexOf.get(e.child) ?? -1
+      const pi = indexOf.get(e.parent) ?? -1
+      return {
+        e,
+        ci,
+        pi,
+        cc: ci >= 0 ? graph.nodes[ci].col : -1,
+        pc: pi >= 0 ? graph.nodes[pi].col : -1,
+      }
     }),
   )
 
+  // Virtualization.
+  let scrollTop = $state(0)
+  let scrollLeft = $state(0)
+  let viewportH = $state(600)
+  let scroller = $state<HTMLDivElement | null>(null)
+  const visStart = $derived(Math.max(0, Math.floor(scrollTop / rowH) - buffer))
+  const visEnd = $derived(Math.min(graph.nodes.length, Math.ceil((scrollTop + viewportH) / rowH) + buffer))
+  const visNodes = $derived(graph.nodes.slice(visStart, visEnd))
+  // Only cross-column edges are drawn (same-column runs are covered by the spine).
+  const visEdges = $derived(
+    edgeRows.filter(({ ci, pi, cc, pc }) => {
+      if (ci < 0 || pi < 0 || cc === pc) return false
+      return !(Math.max(ci, pi) < visStart || Math.min(ci, pi) > visEnd)
+    }),
+  )
   function onScroll() {
-    if (scroller) scrollTop = scroller.scrollTop
+    if (!scroller) return
+    scrollTop = scroller.scrollTop
+    scrollLeft = scroller.scrollLeft
   }
   $effect(() => {
     if (!scroller) return
@@ -65,13 +97,20 @@
     return () => ro.disconnect()
   })
 
-  // Edge path: straight when same lane, gentle S-curve across lanes.
-  function edgePath(x1: number, y1: number, x2: number, y2: number): string {
-    if (x1 === x2) return `M${x1} ${y1} L${x2} ${y2}`
-    const my = (y1 + y2) / 2
-    return `M${x1} ${y1} C${x1} ${my},${x2} ${my},${x2} ${y2}`
+  // Connector: a single horizontal line at the CHILD commit's own row, from the
+  // parent branch's spine across to the child. Each fork/merge gets its own line
+  // at its own timeline row — lines are never merged together.
+  function horizPath(px: number, cx: number, cy: number): string {
+    return `M${px} ${cy} L${cx} ${cy}`
   }
-  const colorOf = (sha: string) => graph.nodes[indexOf.get(sha) ?? 0]?.color ?? '#8b949e'
+
+  // Horizontal triangle arrowhead at the child, pointing toward it (the travel
+  // direction along the connector). Explicit polygon — no SVG marker.
+  function arrowHead(cx: number, cy: number, rightward: boolean): string {
+    const g = nodeR + 1
+    if (rightward) return `${cx - g},${cy} ${cx - g - 6},${cy - 3.5} ${cx - g - 6},${cy + 3.5}`
+    return `${cx + g},${cy} ${cx + g + 6},${cy - 3.5} ${cx + g + 6},${cy + 3.5}`
+  }
 
   // Hover + tooltip.
   let hovered = $state<GraphNode | null>(null)
@@ -79,7 +118,7 @@
   let mouseY = $state(0)
   let contain = $state<Containment | null>(null)
   const containCache = new Map<string, Containment>()
-
+  const hoveredIndex = $derived(hovered ? (indexOf.get(hovered.sha) ?? -1) : -1)
   async function onEnter(n: GraphNode, ev: MouseEvent) {
     hovered = n
     mouseX = ev.clientX
@@ -91,7 +130,7 @@
         containCache.set(n.sha, c)
         if (hovered?.sha === n.sha) contain = c
       } catch {
-        /* server-side query optional */
+        /* optional */
       }
     }
   }
@@ -103,110 +142,145 @@
     hovered = null
     contain = null
   }
+
+  // Header sublabel = GitFlow role, with a staleness hint when applicable.
+  function subLabel(col: { role: string; kind: string }): string {
+    if (col.role === 'other') return ''
+    return col.kind === 'stale' ? `${col.role} · stale` : col.role
+  }
 </script>
 
-<div class="relative h-full">
-  <div
-    bind:this={scroller}
-    onscroll={onScroll}
-    class="h-full overflow-auto"
-  >
-    <svg width="100%" height={totalH} style="display:block" role="application" aria-label="Commit swimlane graph" onmousemove={onMove}>
-      <!-- edges under nodes -->
-      <g fill="none">
-        {#each visEdges as { e, ci, pi } (e.child + '>' + e.parent)}
-          {@const isFirst = e.parentIndex === 0}
-          {@const stroke = isFirst ? colorOf(e.child) : colorOf(e.parent)}
-          {@const dashed = e.type === 'squash' || e.type === 'cherry'}
-          <path
-            d={edgePath(x(graph.nodes[ci].lane), y(ci), x(graph.nodes[pi].lane), y(pi))}
-            stroke={stroke}
-            stroke-width={isFirst ? 1.75 : 1.5}
-            stroke-dasharray={dashed ? '3 3' : undefined}
-            opacity="0.9"
-          />
-        {/each}
-      </g>
+<div class="flex flex-col h-full">
+  <!-- branch column headers (horizontally synced with the graph) -->
+  <div class="relative overflow-hidden border-b border-neutral-200 dark:border-neutral-800 shrink-0" style="height:42px">
+    <div class="absolute top-0 left-0 h-full" style="width:{totalW}px; transform:translateX({-scrollLeft}px)">
+      {#each columns as col, c}
+        <div class="absolute top-1 -translate-x-1/2 flex flex-col items-center gap-0.5" style="left:{colX(c)}px; max-width:{colW - 8}px">
+          {#if col.kind === 'other'}
+            <span class="text-[11px] text-neutral-400 italic truncate">{col.name}</span>
+          {:else}
+            <a
+              href={`${graph.linkBase}/tree/${col.name}`}
+              target="_blank"
+              rel="noopener"
+              class="px-2 py-0.5 rounded text-[11px] font-semibold truncate max-w-full"
+              style="color:{col.color}; background:color-mix(in srgb, {col.color} 15%, transparent)"
+              title={col.name}
+            >{col.name}</a>
+          {/if}
+          {#if subLabel(col)}
+            <span class="text-[9px] uppercase tracking-wide text-neutral-400">{subLabel(col)}</span>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </div>
 
-      <!-- nodes -->
+  <div bind:this={scroller} onscroll={onScroll} class="flex-1 overflow-auto">
+    <svg width={totalW} height={totalH} style="display:block" role="application" aria-label="Branch column graph" onmousemove={onMove}>
+      <!-- background ruler: faint horizontal guides to align the left gutter
+           with commits in far-right columns (every 5th row a touch stronger) -->
+      {#each Array(Math.max(0, visEnd - visStart)) as _, k}
+        {@const i = visStart + k}
+        <line x1="0" x2={totalW} y1={y(i)} y2={y(i)} stroke="currentColor" stroke-width="1" opacity={i % 5 === 0 ? 0.09 : 0.035} />
+      {/each}
+      {#if hoveredIndex >= 0}
+        <rect x="0" y={y(hoveredIndex) - rowH / 2} width={totalW} height={rowH} fill="currentColor" opacity="0.07" />
+      {/if}
+
+      <!-- branch spines (rule-based extent) -->
+      {#each spines as s (s.c)}
+        <line x1={s.x} x2={s.x} y1={s.y1} y2={s.y2} stroke={s.color} stroke-width="2" opacity="0.28" stroke-linecap="round" />
+      {/each}
+
+      <!-- cross-column connectors: one horizontal line per fork/merge at the
+           child's row; prominent (with arrowhead) except merged-in commits -->
+      {#each visEdges as { e, ci, pi, cc, pc } (e.child + '>' + e.parent)}
+        {@const faint = cc === otherIdx || pc === otherIdx}
+        {@const stroke = e.parentIndex === 0 ? graph.nodes[ci].color : graph.nodes[pi].color}
+        {@const dashed = e.type === 'squash' || e.type === 'cherry'}
+        <path
+          d={horizPath(colX(pc), colX(cc), y(ci))}
+          fill="none"
+          stroke={stroke}
+          stroke-width={faint ? 1 : 2}
+          stroke-dasharray={dashed ? '4 3' : undefined}
+          opacity={faint ? 0.22 : 0.95}
+        />
+        {#if !faint}
+          <polygon points={arrowHead(colX(cc), y(ci), colX(cc) > colX(pc))} fill={stroke} />
+        {/if}
+      {/each}
+
+      <!-- nodes + gutter labels -->
       {#each visNodes as n (n.sha)}
         {@const i = indexOf.get(n.sha) ?? 0}
-        {@const cx = x(n.lane)}
+        {@const cx = colX(n.col)}
         {@const cy = y(i)}
-        <a href={n.links.commit} target="_blank" rel="noopener">
-          <g
-            role="listitem"
-            onmouseenter={(ev) => onEnter(n, ev)}
-            onmouseleave={onLeave}
-          >
-            <!-- invisible wide hit area for the whole row -->
-            <rect x="0" y={cy - rowH / 2} width="100%" height={rowH} fill="transparent" />
+        {@const isOther = n.col === otherIdx}
+        <g role="listitem" onmouseenter={(ev) => onEnter(n, ev)} onmouseleave={onLeave}>
+          <rect x="0" y={cy - rowH / 2} width={totalW} height={rowH} fill="transparent" />
+          {#if n.prNum}
+            <text x="8" y={cy + 3.5} font-size="10.5" font-family="ui-monospace, monospace" fill={n.mergeMethod === 'merge' ? '#58a6ff' : '#a371f7'} font-weight="600">PR #{n.prNum}</text>
+          {:else}
+            <text x="8" y={cy + 3.5} font-size="10" font-family="ui-monospace, monospace" fill="#8b949e">{n.sha.slice(0, 7)}</text>
+          {/if}
+          <a href={n.links.commit} target="_blank" rel="noopener">
             {#if n.isMerge}
-              <circle {cx} {cy} r={nodeR + 1.5} fill="none" stroke={n.color} stroke-width="1.6" />
-              <circle {cx} {cy} r={nodeR - 1} fill={n.color} />
+              <circle {cx} {cy} r={nodeR + 1.5} fill="none" stroke={n.color} stroke-width="1.7" opacity={isOther ? 0.5 : 1} />
+              <circle {cx} {cy} r={nodeR - 1.5} fill={n.color} opacity={isOther ? 0.5 : 1} />
             {:else}
-              <circle {cx} {cy} r={nodeR} fill={n.color} />
+              <circle {cx} {cy} r={isOther ? 3 : nodeR} fill={n.color} opacity={isOther ? 0.5 : 1} />
             {/if}
-
-            <!-- ref labels (branch/tag) -->
-            {#if n.refs}
-              {#each n.refs as ref, k}
-                {#if ref.type === 'tag'}
-                  <text x={labelX + k * 4} y={cy + 3.5} font-size="10" fill="#8b949e">◇ {ref.name}</text>
-                {:else}
-                  <text x={labelX + k * 4} y={cy + 3.5} font-size="10" font-weight="600" fill={n.color}>⬤ {ref.name}</text>
-                {/if}
-              {/each}
-            {/if}
-          </g>
-        </a>
+          </a>
+          {#if n.refs}
+            {#each n.refs.filter((r) => r.type === 'tag') as tag, k}
+              <a href={`${graph.linkBase}/releases/tag/${tag.name}`} target="_blank" rel="noopener">
+                <text x={cx + nodeR + 5 + k * 4} y={cy + 3.5} font-size="10" fill="#8b949e" font-family="ui-monospace, monospace">◇ {tag.name}</text>
+              </a>
+            {/each}
+          {/if}
+        </g>
       {/each}
     </svg>
   </div>
-
-  {#if hovered}
-    <div
-      class="fixed z-10 pointer-events-none max-w-sm rounded-md border border-neutral-300 dark:border-neutral-700 bg-white/95 dark:bg-neutral-900/95 shadow-lg px-3 py-2 text-xs"
-      style="left:{Math.min(mouseX + 14, window.innerWidth - 340)}px; top:{mouseY + 14}px"
-    >
-      <div class="flex items-center gap-2">
-        <span class="inline-block w-2 h-2 rounded-full" style="background:{hovered.color}"></span>
-        <span class="font-mono text-[11px] text-neutral-500">{hovered.sha.slice(0, 9)}</span>
-        {#if hovered.branchOf}<span class="text-neutral-400">· {hovered.branchOf}</span>{/if}
-        {#if hovered.isMerge}<span class="text-neutral-400">· merge</span>{/if}
-      </div>
-      <div class="mt-1 font-medium">{hovered.subject}</div>
-      <div class="mt-0.5 text-neutral-500 flex items-center gap-1.5 flex-wrap">
-        <span>{hovered.author} · {new Date(hovered.committedAt).toLocaleString()}</span>
-        {#if hovered.prNum}<span>· PR #{hovered.prNum}</span>{/if}
-        {#if hovered.mergeMethod}
-          <span
-            class="px-1 rounded text-[10px] font-semibold"
-            class:bg-purple-100={hovered.mergeMethod === 'squash'}
-            class:text-purple-700={hovered.mergeMethod === 'squash'}
-            class:bg-blue-100={hovered.mergeMethod === 'merge'}
-            class:text-blue-700={hovered.mergeMethod === 'merge'}
-          >{hovered.mergeMethod}</span>
-        {/if}
-        {#if hovered.ciState}
-          <span
-            class="px-1 rounded text-[10px] font-semibold"
-            class:bg-green-100={hovered.ciState === 'SUCCESS'}
-            class:text-green-700={hovered.ciState === 'SUCCESS'}
-            class:bg-red-100={hovered.ciState === 'FAILURE'}
-            class:text-red-700={hovered.ciState === 'FAILURE'}
-            class:bg-amber-100={hovered.ciState !== 'SUCCESS' && hovered.ciState !== 'FAILURE'}
-            class:text-amber-700={hovered.ciState !== 'SUCCESS' && hovered.ciState !== 'FAILURE'}
-          >CI {hovered.ciState.toLowerCase()}</span>
-        {/if}
-      </div>
-      <div class="mt-1 text-neutral-500">
-        <span class="text-neutral-400">tags:</span>
-        {#if contain === null}<span class="italic">…</span>
-        {:else if contain.tags && contain.tags.length}
-          {contain.tags.map((t) => t.name).slice(0, 8).join(', ')}{contain.tags.length > 8 ? ' …' : ''}
-        {:else}<span class="italic">none</span>{/if}
-      </div>
-    </div>
-  {/if}
 </div>
+
+{#if hovered}
+  <div
+    class="fixed z-10 pointer-events-none max-w-sm rounded-md border border-neutral-300 dark:border-neutral-700 bg-white/95 dark:bg-neutral-900/95 shadow-lg px-3 py-2 text-xs"
+    style="left:{Math.min(mouseX + 14, window.innerWidth - 340)}px; top:{mouseY + 14}px"
+  >
+    <div class="flex items-center gap-2">
+      <span class="inline-block w-2 h-2 rounded-full" style="background:{hovered.color}"></span>
+      <span class="font-mono text-[11px] text-neutral-500">{hovered.sha.slice(0, 9)}</span>
+      {#if hovered.branchOf}<span class="text-neutral-400">· {hovered.branchOf}</span>{/if}
+      {#if hovered.isMerge}<span class="text-neutral-400">· merge</span>{/if}
+    </div>
+    <div class="mt-1 font-medium">{hovered.subject}</div>
+    <div class="mt-0.5 text-neutral-500 flex items-center gap-1.5 flex-wrap">
+      <span>{hovered.author} · {new Date(hovered.committedAt).toLocaleString()}</span>
+      {#if hovered.prNum}<span>· PR #{hovered.prNum}</span>{/if}
+      {#if hovered.mergeMethod}
+        <span
+          class="px-1 rounded text-[10px] font-semibold"
+          class:bg-purple-100={hovered.mergeMethod === 'squash'}
+          class:text-purple-700={hovered.mergeMethod === 'squash'}
+          class:bg-blue-100={hovered.mergeMethod === 'merge'}
+          class:text-blue-700={hovered.mergeMethod === 'merge'}
+        >{hovered.mergeMethod}</span>
+      {/if}
+      {#if hovered.ciState}
+        <span
+          class="px-1 rounded text-[10px] font-semibold"
+          class:bg-green-100={hovered.ciState === 'SUCCESS'}
+          class:text-green-700={hovered.ciState === 'SUCCESS'}
+          class:bg-red-100={hovered.ciState === 'FAILURE'}
+          class:text-red-700={hovered.ciState === 'FAILURE'}
+          class:bg-amber-100={hovered.ciState !== 'SUCCESS' && hovered.ciState !== 'FAILURE'}
+          class:text-amber-700={hovered.ciState !== 'SUCCESS' && hovered.ciState !== 'FAILURE'}
+        >CI {hovered.ciState.toLowerCase()}</span>
+      {/if}
+    </div>
+  </div>
+{/if}
