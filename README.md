@@ -10,6 +10,76 @@ binary (`gbg`) does everything.
 
 ---
 
+## Quick start
+
+Follow these steps top to bottom and you will end up with an interactive branch
+graph of any repository in your browser.
+
+### 0. Prerequisites
+
+- **Go 1.25+**, **Git**, and **Node.js 18+ with npm** on your `PATH`.
+
+```bash
+go version && git --version && node --version && npm --version
+```
+
+A GitHub token is **optional** (only enriches PR/CI info) — everything below works
+without one.
+
+### 1. Get and build
+
+```bash
+git clone https://github.com/0xmhha/git-branch-graph.git
+cd git-branch-graph
+make binary        # builds the web UI, embeds it, and compiles bin/gbg
+```
+
+> Use `make binary`, not `make build`. `make build` compiles a Go-only binary
+> **without** the web UI — `gbg serve` will then respond with an API but show a
+> blank page in the browser.
+
+### 2. Start the web UI
+
+```bash
+./bin/gbg serve
+```
+
+Open **<http://localhost:8080>**.
+
+### 3. Analyze a repository — right in the browser
+
+On the landing page, paste any GitHub URL (or a local repository path), e.g.
+
+```
+https://github.com/anthropics/anthropic-sdk-go
+```
+
+and hit **Analyze**. Progress is streamed live (`Cloning… → Extracting commits &
+refs… → Computing branch graph… → Ready`), and when it finishes the repository
+opens automatically:
+
+- The **Graph** tab — the swimlane of branches, merges, squashes and
+  cherry-picks, with branch highlighting and commit search.
+- The **Releases** tab — the version × environment matrix and the
+  "where is this fix?" lookup.
+
+Every analyzed repository stays listed on the landing page for instant reopening.
+
+> Prefer the terminal? `./bin/gbg ingest <url>` does the same analysis from the
+> CLI (useful for scripts/CI); the result shows up in the UI the same way.
+
+### If something goes wrong
+
+| Symptom | Cause / fix |
+|---|---|
+| `./bin/gbg: no such file or directory` | The build step was skipped or failed — run `make binary` from the repo root and check its output. |
+| Browser shows a blank page or only JSON | The binary was built with `make build` (no embedded UI). Rebuild with `make binary`. |
+| `make binary` fails at `npm install` | Node.js 18+/npm missing. Install Node, or use `make build` + the API/MCP only. |
+| Port 8080 already in use | `./bin/gbg serve --addr :9090` and open that port instead. |
+| PRs show no merge method / CI status | No GitHub token found. Export `GITHUB_TOKEN` (or log in with `gh`) and re-run `ingest --refresh-enrich`. Analysis itself works without it. |
+
+---
+
 ## Features
 
 - **Any source** — a remote GitHub URL, a local repository path, or a folder you
@@ -64,34 +134,15 @@ repository is a fast cache hit.
 
 ## Installation
 
-```bash
-git clone https://github.com/0xmhha/git-branch-graph.git
-cd git-branch-graph
-
-# Self-contained binary with the web UI embedded (recommended):
-make binary          # builds the Svelte UI, embeds it, and compiles bin/gbg
-
-# Or a Go-only build (no bundled UI; serve falls back to --web-dir or API-only):
-make build
-```
-
-Both produce `bin/gbg`.
-
----
-
-## Quick start
+See [Quick start](#quick-start) for the recommended path (`make binary`). If you
+only need the CLI/API/MCP without the bundled front end, a Go-only build works
+without Node.js:
 
 ```bash
-# 1) Analyze a repository
-./bin/gbg ingest https://github.com/<org>/<repo>
-
-# 2) Explore it in the browser
-./bin/gbg serve
-#    → open http://localhost:8080
+make build           # Go-only; serve falls back to --web-dir or API-only
 ```
 
-The landing page also accepts a URL or path directly and analyzes it live, showing
-progress as it runs.
+Both `make binary` and `make build` produce `bin/gbg`.
 
 ---
 

@@ -140,7 +140,11 @@
         <ul class="mt-2 flex flex-col gap-0.5 max-h-40 overflow-auto">
           {#each nextPreview.commits.slice(0, 40) as c}
             <li class="text-xs leading-tight text-neutral-600 dark:text-neutral-300">
-              <a class="font-mono text-[10px] text-emerald-600" href={`${linkBase}/commit/${c.sha}`} target="_blank" rel="noopener">{c.sha.slice(0, 8)}</a>
+              {#if c.unpushed}
+                <span class="font-mono text-[10px] text-amber-600" title="Local-only commit — not pushed to the remote">{c.sha.slice(0, 8)} ⇡local</span>
+              {:else}
+                <a class="font-mono text-[10px] text-emerald-600" href={`${linkBase}/commit/${c.sha}`} target="_blank" rel="noopener">{c.sha.slice(0, 8)}</a>
+              {/if}
               {#if c.prNum}<span class="text-neutral-400">#{c.prNum}</span>{/if}
               <span>{c.subject}</span>
             </li>
@@ -212,7 +216,11 @@
                     <ul class="flex flex-col gap-0.5 max-h-52 overflow-auto">
                       {#each contentsView as c}
                         <li class="text-xs leading-tight">
-                          <a class="font-mono text-[10px] text-emerald-600" href={`${linkBase}/commit/${c.sha}`} target="_blank" rel="noopener">{c.sha.slice(0, 8)}</a>
+                          {#if c.unpushed}
+                            <span class="font-mono text-[10px] text-amber-600" title="Local-only commit — not pushed to the remote">{c.sha.slice(0, 8)} ⇡local</span>
+                          {:else}
+                            <a class="font-mono text-[10px] text-emerald-600" href={`${linkBase}/commit/${c.sha}`} target="_blank" rel="noopener">{c.sha.slice(0, 8)}</a>
+                          {/if}
                           {#if c.prNum}<a class="text-neutral-400 hover:underline" href={`${linkBase}/pull/${c.prNum}`} target="_blank" rel="noopener">#{c.prNum}</a>{/if}
                           <span class="text-neutral-600 dark:text-neutral-300">{c.subject}</span>
                         </li>

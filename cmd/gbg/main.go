@@ -195,8 +195,8 @@ func runOntology(args []string) error {
 		return err
 	}
 	fmt.Printf("      commits=%d refs=%d edges=%d\n", len(commits), len(refs), len(edges))
-	// Standalone recompute: no enrich, cherries from the cached raw/cherries.csv.
-	if err := pipeline.BuildOntology(runDir, snap, commits, refs, edges, nil, loader.LoadCherries(runDir), ""); err != nil {
+	// Standalone recompute: no enrich; cherries + local state from cached raw/*.csv.
+	if err := pipeline.BuildOntology(runDir, snap, commits, refs, edges, nil, loader.LoadCherries(runDir), loader.LoadLocal(runDir), ""); err != nil {
 		return err
 	}
 	fmt.Printf("done: %s\n", runDir)

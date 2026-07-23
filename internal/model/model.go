@@ -70,10 +70,11 @@ type Edge struct {
 // right order (feature < default < release < hotfix < master < other); Kind
 // drives currency (spine rules / label): default | active | stale | other.
 type Column struct {
-	Name  string
-	Kind  string // "default" | "active" | "stale" | "other"
-	Role  string // "feature" | "default" | "release" | "hotfix" | "master" | "other"
-	Color string
+	Name      string
+	Kind      string // "default" | "active" | "stale" | "other"
+	Role      string // "feature" | "default" | "release" | "hotfix" | "master" | "other"
+	Color     string
+	LocalOnly bool // branch exists only locally (no remote counterpart)
 }
 
 // Graph is the computed ontology: render-ready nodes + edges plus meta.
@@ -108,7 +109,18 @@ type Node struct {
 	BranchOf          string    // first-parent owning branch ("" if none)
 	Refs              []NodeRef // branch/tag decorations pointing here
 	ContainedBranches []string  // lightweight; inlined in JSON
+	Unpushed          bool      // local-only commit (not on any remote-tracking ref)
 	Links             NodeLinks
+}
+
+// LocalState captures what a local checkout knows about its remote: which
+// commits exist only locally (unreachable from any remote-tracking ref) and
+// which branches exist on the remote. Known=false means the source had no
+// remote-tracking refs (or was a remote URL), so nothing can be judged.
+type LocalState struct {
+	Known          bool
+	Unpushed       map[string]bool // sha → local-only
+	RemoteBranches map[string]bool // branch name exists under refs/remotes/*
 }
 
 // NodeRef is a branch/tag whose tip is exactly this commit.

@@ -19,7 +19,8 @@ const schema = `
 CREATE TABLE commits (
   id INTEGER PRIMARY KEY, sha TEXT UNIQUE NOT NULL, author_name TEXT, author_email TEXT,
   authored_at TEXT, committed_at TEXT, subject TEXT, pr_num INTEGER,
-  is_merge INTEGER NOT NULL DEFAULT 0, lane INTEGER, color TEXT, branch_of TEXT
+  is_merge INTEGER NOT NULL DEFAULT 0, lane INTEGER, color TEXT, branch_of TEXT,
+  unpushed INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE edges (
   child_sha TEXT NOT NULL, parent_sha TEXT NOT NULL, parent_index INTEGER NOT NULL,
@@ -89,8 +90,8 @@ func Write(path string, g model.Graph, refs []model.Ref, edges []model.Edge) (co
 	// commits (integer id = position in g.Nodes + 1)
 	commitID := make(map[string]int, len(g.Nodes))
 	cst, err := tx.Prepare(`INSERT INTO commits
-		(id,sha,author_name,author_email,authored_at,committed_at,subject,pr_num,is_merge,lane,color,branch_of)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+		(id,sha,author_name,author_email,authored_at,committed_at,subject,pr_num,is_merge,lane,color,branch_of,unpushed)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -98,7 +99,7 @@ func Write(path string, g model.Graph, refs []model.Ref, edges []model.Edge) (co
 		id := i + 1
 		commitID[n.SHA] = id
 		if _, err = cst.Exec(id, n.SHA, n.Author, "", "", n.CommittedAt, n.Subject,
-			nullInt(n.PRNum), b2i(n.IsMerge), n.Lane, n.Color, nullStr(n.BranchOf)); err != nil {
+			nullInt(n.PRNum), b2i(n.IsMerge), n.Lane, n.Color, nullStr(n.BranchOf), b2i(n.Unpushed)); err != nil {
 			return 0, err
 		}
 	}

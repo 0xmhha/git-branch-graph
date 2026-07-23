@@ -15,6 +15,7 @@ import (
 	"github.com/wm-it-25/git-branch-graph/internal/db"
 	"github.com/wm-it-25/git-branch-graph/internal/enrich"
 	"github.com/wm-it-25/git-branch-graph/internal/extract"
+	"github.com/wm-it-25/git-branch-graph/internal/gitcmd"
 	"github.com/wm-it-25/git-branch-graph/internal/model"
 	"github.com/wm-it-25/git-branch-graph/internal/ontology"
 	"github.com/wm-it-25/git-branch-graph/internal/paths"
@@ -61,6 +62,13 @@ func Run(opts Options, prog Progress) (Result, error) {
 
 	remote := strings.Contains(opts.Input, "://") || strings.HasPrefix(opts.Input, "git@")
 	ref := paths.ParseRepoRef(opts.Input)
+	// For a local path, the parent-dir org guess is weak ("github", "src", …);
+	// prefer the checkout's own origin remote when it points at a real host.
+	if !remote && opts.Repo == "" {
+		if o, ok := originRef(opts.Input); ok {
+			ref.Org, ref.Repo, ref.Slug = o.Org, o.Repo, o.Slug
+		}
+	}
 	if opts.Repo != "" {
 		o, r, ok := splitRepo(opts.Repo)
 		if !ok {
@@ -112,6 +120,14 @@ func Run(opts Options, prog Progress) (Result, error) {
 	cherries, _ := extract.ScanCherryPicks(acq.BareDir)
 	_ = extract.WriteCherries(runDir, cherries)
 
+	// Local-vs-remote state (local sources only): which commits/branches exist
+	// only locally, so their GitHub links would 404.
+	var local model.LocalState
+	if !remote {
+		local = extract.ScanLocal(opts.Input)
+		_ = extract.WriteLocal(runDir, local)
+	}
+
 	// (4) Enrich — GitHub PR/CI (optional).
 	var enriched map[string]model.PR
 	if !opts.NoEnrich {
@@ -125,7 +141,7 @@ func Run(opts Options, prog Progress) (Result, error) {
 	if opts.Containment != "" && opts.Containment != "full" {
 		prog("ontology", 85, "Containment limited to "+opts.Containment)
 	}
-	if err := BuildOntology(runDir, snap, commits, refs, edges, enriched, cherries, opts.Containment); err != nil {
+	if err := BuildOntology(runDir, snap, commits, refs, edges, enriched, cherries, local, opts.Containment); err != nil {
 		return Result{}, err
 	}
 
@@ -135,6 +151,25 @@ func Run(opts Options, prog Progress) (Result, error) {
 
 // existingRun reports whether input is an already-analyzed run folder and its
 // serving id (folder name when under DataDir, else an absolute path).
+// originRef parses org/repo from a local checkout's origin remote. It reports
+// ok only when origin exists and looks like a remote URL (not another local
+// path), so callers can fall back to the path-based guess otherwise.
+func originRef(dir string) (model.RepoRef, bool) {
+	out, err := gitcmd.Run(dir, "remote", "get-url", "origin")
+	if err != nil {
+		return model.RepoRef{}, false
+	}
+	origin := strings.TrimSpace(out)
+	if !strings.Contains(origin, "://") && !strings.HasPrefix(origin, "git@") {
+		return model.RepoRef{}, false
+	}
+	o := paths.ParseRepoRef(origin)
+	if o.Org == "" || o.Repo == "" {
+		return model.RepoRef{}, false
+	}
+	return o, true
+}
+
 func existingRun(input, dataDir string) (id, dir string, ok bool) {
 	fi, err := os.Stat(input)
 	if err != nil || !fi.IsDir() {
@@ -152,8 +187,8 @@ func existingRun(input, dataDir string) (id, dir string, ok bool) {
 }
 
 // BuildOntology computes and writes graph.json + graph.sqlite + prs.csv.
-func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherries map[string]string, containMode string) error {
-	g := ontology.Build(snap, commits, refs, edges, enriched, cherries, containMode)
+func BuildOntology(runDir string, snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherries map[string]string, local model.LocalState, containMode string) error {
+	g := ontology.Build(snap, commits, refs, edges, enriched, cherries, local, containMode)
 	if err := ontology.WriteJSON(filepath.Join(runDir, "graph.json"), g); err != nil {
 		return fmt.Errorf("graph.json: %w", err)
 	}
