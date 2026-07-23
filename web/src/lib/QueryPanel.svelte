@@ -80,7 +80,11 @@
         <ul class="flex flex-col gap-1 overflow-auto">
           {#each diff.commits as c}
             <li class="text-xs leading-tight">
-              <a class="font-mono text-[10px] text-emerald-600" href={`${linkBase}/commit/${c.sha}`} target="_blank" rel="noopener">{c.sha.slice(0, 8)}</a>
+              {#if c.unpushed}
+                <span class="font-mono text-[10px] text-amber-600" title="Local-only commit — not pushed to the remote">{c.sha.slice(0, 8)} ⇡local</span>
+              {:else}
+                <a class="font-mono text-[10px] text-emerald-600" href={`${linkBase}/commit/${c.sha}`} target="_blank" rel="noopener">{c.sha.slice(0, 8)}</a>
+              {/if}
               <span class="text-neutral-500">{c.subject}</span>
             </li>
           {/each}

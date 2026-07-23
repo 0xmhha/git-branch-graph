@@ -28,6 +28,7 @@ export interface Column {
   kind: 'default' | 'active' | 'stale' | 'other'
   role: 'feature' | 'default' | 'release' | 'hotfix' | 'master' | 'other'
   color: string
+  localOnly?: boolean // branch exists only locally — no remote tree to link to
 }
 
 export interface GraphNode {
@@ -48,6 +49,7 @@ export interface GraphNode {
   branchOf?: string
   refs?: NodeRef[]
   containedBranches?: string[]
+  unpushed?: boolean
   links: NodeLinks
 }
 

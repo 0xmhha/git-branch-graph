@@ -74,9 +74,12 @@ export async function prs(runId: string, opts: { method?: string; state?: string
 
 export async function diff(runId: string, inRef: string, notinRef: string): Promise<{ count: number; commits: DiffCommit[] }> {
   const db = await getDB(runId)
+  // Older graph.sqlite files predate the unpushed column — select 0 instead.
+  const hasUnpushed =
+    ((query(db, `SELECT COUNT(*) AS n FROM pragma_table_info('commits') WHERE name='unpushed'`)[0]?.n as number) ?? 0) > 0
   const rows = query(
     db,
-    `SELECT c.sha, c.subject, c.pr_num, c.committed_at FROM commits c
+    `SELECT c.sha, c.subject, c.pr_num, c.committed_at, ${hasUnpushed ? 'c.unpushed' : '0'} AS unpushed FROM commits c
      WHERE EXISTS (SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id WHERE ct.commit_id=c.id AND r.ref_name=?1)
        AND NOT EXISTS (SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id WHERE ct.commit_id=c.id AND r.ref_name=?2)
      ORDER BY c.committed_at DESC LIMIT 500`,
@@ -87,6 +90,7 @@ export async function diff(runId: string, inRef: string, notinRef: string): Prom
     subject: (r.subject as string) ?? '',
     prNum: r.pr_num != null ? String(r.pr_num) : '',
     committedAt: (r.committed_at as string) ?? '',
+    unpushed: !!(r.unpushed as number),
   }))
   return { count: commits.length, commits }
 }

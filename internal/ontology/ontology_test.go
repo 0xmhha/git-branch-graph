@@ -66,7 +66,7 @@ func TestTopoOrderChildrenBeforeParents(t *testing.T) {
 
 func TestBuildLanesAndColors(t *testing.T) {
 	snap, commits, refs, edges := testData()
-	g := Build(snap, commits, refs, edges, nil, nil, "")
+	g := Build(snap, commits, refs, edges, nil, nil, model.LocalState{}, "")
 
 	byS := map[string]model.Node{}
 	for _, n := range g.Nodes {
@@ -109,7 +109,7 @@ func TestSquashClassification(t *testing.T) {
 	}
 	refs := []model.Ref{{Name: "dev", Type: "branch", TargetSHA: "S", IsDefault: true}}
 	edges := []model.Edge{{Child: "S", Parent: "P", ParentIndex: 0, Type: "commit"}}
-	g := Build(snap, commits, refs, edges, nil, nil, "")
+	g := Build(snap, commits, refs, edges, nil, nil, model.LocalState{}, "")
 
 	var sNode model.Node
 	for _, n := range g.Nodes {
@@ -157,5 +157,50 @@ func TestContainment(t *testing.T) {
 	}
 	if has("E", "v1") || has("F", "v1") || has("C", "v1") {
 		t.Error("v1 should NOT contain E/F/C")
+	}
+}
+
+// TestBuildLocalState verifies that local-only commits lose their (dead) GitHub
+// links and are marked, and that local-only branch columns are flagged.
+func TestBuildLocalState(t *testing.T) {
+	snap, commits, refs, edges := testData()
+	local := model.LocalState{
+		Known:          true,
+		Unpushed:       map[string]bool{"C": true}, // tip not pushed yet
+		RemoteBranches: map[string]bool{},          // "dev" has no remote counterpart
+	}
+	g := Build(snap, commits, refs, edges, nil, nil, local, "")
+
+	byS := map[string]model.Node{}
+	for _, n := range g.Nodes {
+		byS[n.SHA] = n
+	}
+	if !byS["C"].Unpushed {
+		t.Error("C should be marked unpushed")
+	}
+	if byS["C"].Links.Commit != "" || byS["C"].Links.PR != "" {
+		t.Errorf("unpushed C should have no commit/PR links, got %+v", byS["C"].Links)
+	}
+	if byS["B"].Unpushed {
+		t.Error("B is pushed; must not be marked")
+	}
+	if byS["B"].Links.Commit == "" {
+		t.Error("pushed B should keep its commit link")
+	}
+	if byS["B"].Links.Tree != "" {
+		t.Error("tree link should be dropped: branch dev is local-only")
+	}
+	for _, c := range g.Columns {
+		if c.Name == "dev" && !c.LocalOnly {
+			t.Error("column dev should be flagged localOnly")
+		}
+	}
+
+	// Unknown local state must change nothing.
+	g2 := Build(snap, commits, refs, edges, nil, nil, model.LocalState{}, "")
+	for _, n := range g2.Nodes {
+		if n.Unpushed || n.Links.Commit == "" {
+			t.Errorf("remote analysis must keep all links: %s %+v", n.SHA, n.Links)
+		}
 	}
 }

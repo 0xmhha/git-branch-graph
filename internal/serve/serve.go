@@ -248,7 +248,13 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer dbc.Close()
-	rows, err := dbc.Query(`SELECT c.sha, c.subject, c.pr_num, c.committed_at
+	// Older graph.sqlite files predate the unpushed column — select 0 instead.
+	unpushedCol := "0"
+	var n int
+	if err := dbc.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('commits') WHERE name='unpushed'`).Scan(&n); err == nil && n > 0 {
+		unpushedCol = "c.unpushed"
+	}
+	rows, err := dbc.Query(`SELECT c.sha, c.subject, c.pr_num, c.committed_at, `+unpushedCol+`
 		FROM commits c
 		WHERE EXISTS (
 		        SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id
@@ -267,18 +273,21 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 		Subject     string `json:"subject"`
 		PRNum       string `json:"prNum"`
 		CommittedAt string `json:"committedAt"`
+		Unpushed    bool   `json:"unpushed,omitempty"`
 	}
 	out := []row{}
 	for rows.Next() {
 		var rw row
 		var pr sql.NullInt64
-		if err := rows.Scan(&rw.SHA, &rw.Subject, &pr, &rw.CommittedAt); err != nil {
+		var unpushed int
+		if err := rows.Scan(&rw.SHA, &rw.Subject, &pr, &rw.CommittedAt, &unpushed); err != nil {
 			httpErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if pr.Valid {
 			rw.PRNum = strconv.FormatInt(pr.Int64, 10)
 		}
+		rw.Unpushed = unpushed != 0
 		out = append(out, rw)
 	}
 	writeJSON(w, map[string]any{"in": in, "notin": notin, "count": len(out), "commits": out})

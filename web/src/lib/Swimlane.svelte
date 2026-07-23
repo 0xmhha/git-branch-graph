@@ -278,13 +278,17 @@
                 title={`Highlight ${col.name}`}
                 onclick={() => toggleHighlight(c)}
               >{col.name}</button>
-              <a
-                href={`${graph.linkBase}/tree/${col.name}`}
-                target="_blank"
-                rel="noopener"
-                class="text-[10px] text-neutral-400 hover:text-emerald-500 shrink-0"
-                title="Open on GitHub"
-              >↗</a>
+              {#if col.localOnly}
+                <span class="text-[9px] text-amber-600 shrink-0" title="This branch exists only locally — it has not been pushed to the remote.">local</span>
+              {:else}
+                <a
+                  href={`${graph.linkBase}/tree/${col.name}`}
+                  target="_blank"
+                  rel="noopener"
+                  class="text-[10px] text-neutral-400 hover:text-emerald-500 shrink-0"
+                  title="Open on GitHub"
+                >↗</a>
+              {/if}
             </span>
           {/if}
           {#if subLabel(col)}
@@ -359,7 +363,11 @@
           {:else}
             <text x="8" y={cy + 3.5} font-size="10" font-family="ui-monospace, monospace" fill="#8b949e">{n.sha.slice(0, 7)}</text>
           {/if}
-          <a href={n.links.commit} target="_blank" rel="noopener">
+          <!-- Local-only commits have no remote page; render without a link. -->
+          <a href={n.links.commit || undefined} target="_blank" rel="noopener">
+            {#if n.unpushed}
+              <circle {cx} {cy} r={nodeR + 4} fill="none" stroke={n.color} stroke-width="1" stroke-dasharray="2.5 2" opacity="0.8" />
+            {/if}
             {#if n.isMerge}
               <circle {cx} {cy} r={nodeR + 1.5} fill="none" stroke={n.color} stroke-width="1.7" opacity={isOther ? 0.5 : 1} />
               <circle {cx} {cy} r={nodeR - 1.5} fill={n.color} opacity={isOther ? 0.5 : 1} />
@@ -391,6 +399,9 @@
     <div class="flex items-center gap-2">
       <span class="inline-block w-2 h-2 rounded-full" style="background:{hovered.color}"></span>
       <span class="font-mono text-[11px] text-neutral-500">{hovered.sha.slice(0, 9)}</span>
+      {#if hovered.unpushed}
+        <span class="px-1 rounded text-[10px] font-semibold bg-amber-100 text-amber-700" title="This commit exists only locally — it has not been pushed to the remote, so there is no GitHub page for it.">local</span>
+      {/if}
       {#if hovered.branchOf}<span class="text-neutral-400">· {hovered.branchOf}</span>{/if}
       {#if hovered.isMerge}<span class="text-neutral-400">· merge</span>{/if}
     </div>

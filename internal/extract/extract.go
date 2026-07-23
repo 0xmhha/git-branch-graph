@@ -123,6 +123,55 @@ func WriteCherries(outDir string, picks map[string]string) error {
 	return csvw.Write(filepath.Join(outDir, "raw", "cherries.csv"), header, rows)
 }
 
+// ScanLocal compares a local checkout against its remote-tracking refs:
+// commits unreachable from any refs/remotes/* ref are local-only (their remote
+// commit/PR links would 404), and branches without a refs/remotes/* counterpart
+// exist only locally. Known=false when the source has no remote-tracking refs.
+func ScanLocal(srcDir string) model.LocalState {
+	ls := model.LocalState{Unpushed: map[string]bool{}, RemoteBranches: map[string]bool{}}
+
+	out, err := gitcmd.Run(srcDir, "for-each-ref", "refs/remotes", "--format=%(refname)")
+	if err != nil || strings.TrimSpace(out) == "" {
+		return ls // no remote-tracking refs → cannot judge
+	}
+	for _, ref := range strings.Split(strings.TrimSpace(out), "\n") {
+		// refs/remotes/<remote>/<branch> → <branch>
+		parts := strings.SplitN(strings.TrimSpace(ref), "/", 4)
+		if len(parts) == 4 && parts[3] != "HEAD" {
+			ls.RemoteBranches[parts[3]] = true
+		}
+	}
+
+	revs, err := gitcmd.RunStream(srcDir, "rev-list", "--branches", "--tags", "--not", "--remotes")
+	if err != nil {
+		return ls
+	}
+	for _, sha := range strings.Split(strings.TrimSpace(string(revs)), "\n") {
+		if sha = strings.TrimSpace(sha); sha != "" {
+			ls.Unpushed[sha] = true
+		}
+	}
+	ls.Known = true
+	return ls
+}
+
+// WriteLocal writes the local-vs-remote state to outDir/raw/local.csv.
+// Nothing is written when the state is unknown (file absence = unknown).
+func WriteLocal(outDir string, ls model.LocalState) error {
+	if !ls.Known {
+		return nil
+	}
+	header := []string{"kind", "name"}
+	rows := make([][]string, 0, len(ls.Unpushed)+len(ls.RemoteBranches))
+	for sha := range ls.Unpushed {
+		rows = append(rows, []string{"unpushed", sha})
+	}
+	for b := range ls.RemoteBranches {
+		rows = append(rows, []string{"remote_branch", b})
+	}
+	return csvw.Write(filepath.Join(outDir, "raw", "local.csv"), header, rows)
+}
+
 // WritePRs writes the classified PR table to outDir/raw/prs.csv.
 func WritePRs(outDir string, prs []model.PR) error {
 	header := []string{"pr_num", "state", "merge_method", "merge_sha", "base_ref", "head_ref", "url", "ci_state"}

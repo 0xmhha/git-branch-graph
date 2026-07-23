@@ -15,7 +15,7 @@ import (
 // Build computes the full graph from the raw layer. enriched carries optional PR
 // data keyed by PR number (nil when enrich did not run); it refines the offline
 // merge/squash classification.
-func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherryPicks map[string]string, containMode string) model.Graph {
+func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges []model.Edge, enriched map[string]model.PR, cherryPicks map[string]string, local model.LocalState, containMode string) model.Graph {
 	linkBase := fmt.Sprintf("https://github.com/%s/%s", snap.Ref.Org, snap.Ref.Repo)
 
 	// Index and derived maps.
@@ -92,6 +92,15 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 	// Fixed branch columns (default → active → stale → other) and per-commit
 	// column assignment: owning branch, else leftmost containing branch, else other.
 	columns, colIdx := computeColumns(refs, commitOf, snap.DefaultBranch)
+	// Branches without a remote-tracking counterpart exist only locally — their
+	// GitHub tree links would 404.
+	if local.Known {
+		for i := range columns {
+			if !local.RemoteBranches[columns[i].Name] {
+				columns[i].LocalOnly = true
+			}
+		}
+	}
 	otherCol := len(columns)
 	usedOther := false
 	colOf := func(sha string) int {
@@ -125,14 +134,20 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 	for _, sha := range order {
 		c := commitOf[sha]
 		bo := branchOf[sha]
-		links := model.NodeLinks{Commit: linkBase + "/commit/" + sha}
+		// A local-only commit (or a branch that only exists locally) has no
+		// remote counterpart — emitting its GitHub URL would just 404.
+		unpushed := local.Known && local.Unpushed[sha]
+		var links model.NodeLinks
+		if !unpushed {
+			links.Commit = linkBase + "/commit/" + sha
+		}
 		// Link the PR only when it isn't known-bad: a verified PR, or an unknown
 		// one (enrich didn't run). An "unverified" PR number is likely upstream,
 		// so its /pull/N link would be wrong — omit it.
-		if c.PRNum != "" && verifiedOf[sha] != "unverified" {
+		if c.PRNum != "" && verifiedOf[sha] != "unverified" && !unpushed {
 			links.PR = linkBase + "/pull/" + c.PRNum
 		}
-		if bo != "" {
+		if bo != "" && (!local.Known || local.RemoteBranches[bo]) {
 			links.Tree = linkBase + "/tree/" + bo
 		}
 		nodes = append(nodes, model.Node{
@@ -153,6 +168,7 @@ func Build(snap model.Snapshot, commits []model.Commit, refs []model.Ref, edges 
 			BranchOf:          bo,
 			Refs:              refsAt[sha],
 			ContainedBranches: branchContain[sha],
+			Unpushed:          unpushed,
 			Links:             links,
 		})
 	}

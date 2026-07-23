@@ -21,10 +21,11 @@ func WriteJSON(path string, g model.Graph) error {
 		Tree   string `json:"tree,omitempty"`
 	}
 	type jColumn struct {
-		Name  string `json:"name"`
-		Kind  string `json:"kind"`
-		Role  string `json:"role"`
-		Color string `json:"color"`
+		Name      string `json:"name"`
+		Kind      string `json:"kind"`
+		Role      string `json:"role"`
+		Color     string `json:"color"`
+		LocalOnly bool   `json:"localOnly,omitempty"`
 	}
 	type jNode struct {
 		SHA               string   `json:"sha"`
@@ -44,6 +45,7 @@ func WriteJSON(path string, g model.Graph) error {
 		BranchOf          string   `json:"branchOf,omitempty"`
 		Refs              []jRef   `json:"refs,omitempty"`
 		ContainedBranches []string `json:"containedBranches,omitempty"`
+		Unpushed          bool     `json:"unpushed,omitempty"`
 		Links             jLinks   `json:"links"`
 	}
 	type jEdge struct {
@@ -86,7 +88,7 @@ func WriteJSON(path string, g model.Graph) error {
 
 	doc.Columns = make([]jColumn, 0, len(g.Columns))
 	for _, c := range g.Columns {
-		doc.Columns = append(doc.Columns, jColumn{Name: c.Name, Kind: c.Kind, Role: c.Role, Color: c.Color})
+		doc.Columns = append(doc.Columns, jColumn{Name: c.Name, Kind: c.Kind, Role: c.Role, Color: c.Color, LocalOnly: c.LocalOnly})
 	}
 
 	doc.Nodes = make([]jNode, 0, len(g.Nodes))
@@ -102,6 +104,7 @@ func WriteJSON(path string, g model.Graph) error {
 			PRVerified: n.PRVerified, CherryFrom: n.CherryFrom, CherryTo: n.CherryTo,
 			BranchOf: n.BranchOf, Refs: refs,
 			ContainedBranches: n.ContainedBranches,
+			Unpushed:          n.Unpushed,
 			Links:             jLinks{Commit: n.Links.Commit, PR: n.Links.PR, Tree: n.Links.Tree},
 		})
 	}

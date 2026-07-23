@@ -134,6 +134,29 @@ func LoadCherries(runDir string) map[string]string {
 	return m
 }
 
+// LoadLocal reads raw/local.csv (local-vs-remote state); Known=false if the
+// file is absent (remote analysis, or the source had no remote-tracking refs).
+func LoadLocal(runDir string) model.LocalState {
+	ls := model.LocalState{Unpushed: map[string]bool{}, RemoteBranches: map[string]bool{}}
+	rows, err := readCSV(filepath.Join(runDir, "raw", "local.csv"))
+	if err != nil {
+		return ls
+	}
+	for _, r := range rows {
+		if len(r) < 2 {
+			continue
+		}
+		switch r[0] {
+		case "unpushed":
+			ls.Unpushed[r[1]] = true
+		case "remote_branch":
+			ls.RemoteBranches[r[1]] = true
+		}
+	}
+	ls.Known = true
+	return ls
+}
+
 func loadEdges(path string) ([]model.Edge, error) {
 	rows, err := readCSV(path)
 	if err != nil {

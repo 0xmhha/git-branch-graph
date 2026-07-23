@@ -73,6 +73,7 @@ export interface DiffCommit {
   subject: string
   prNum: string
   committedAt: string
+  unpushed?: boolean // local-only commit — no remote counterpart to link to
 }
 
 export async function fetchDiff(id: string, inRef: string, notinRef: string): Promise<{ count: number; commits: DiffCommit[] }> {

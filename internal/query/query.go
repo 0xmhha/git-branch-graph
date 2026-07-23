@@ -22,6 +22,7 @@ type Commit struct {
 	Subject     string `json:"subject" jsonschema:"commit subject line"`
 	PRNum       string `json:"prNum,omitempty" jsonschema:"PR number if the commit references one"`
 	CommittedAt string `json:"committedAt" jsonschema:"commit timestamp (ISO8601)"`
+	Unpushed    bool   `json:"unpushed,omitempty" jsonschema:"true if the commit exists only locally (not pushed to the remote)"`
 }
 
 type PR struct {
@@ -82,9 +83,20 @@ func Containment(db *sql.DB, sha string) (branches, tags []Ref, err error) {
 	return branches, tags, rows.Err()
 }
 
+// unpushedCol returns the commits.unpushed column expression, or a literal 0
+// for graph.sqlite files written before the column existed.
+func unpushedCol(db *sql.DB, prefix string) string {
+	var n int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('commits') WHERE name='unpushed'`).Scan(&n)
+	if n > 0 {
+		return prefix + "unpushed"
+	}
+	return "0"
+}
+
 // Diff returns commits contained in `in` but not in `notin`.
 func Diff(db *sql.DB, in, notin string, limit int) ([]Commit, error) {
-	rows, err := db.Query(`SELECT c.sha, c.subject, c.pr_num, c.committed_at FROM commits c
+	rows, err := db.Query(`SELECT c.sha, c.subject, c.pr_num, c.committed_at, `+unpushedCol(db, "c.")+` FROM commits c
 		WHERE EXISTS (SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id WHERE ct.commit_id=c.id AND r.ref_name=?1)
 		  AND NOT EXISTS (SELECT 1 FROM containment ct JOIN refs r ON r.id=ct.ref_id WHERE ct.commit_id=c.id AND r.ref_name=?2)
 		ORDER BY c.committed_at DESC LIMIT ?3`, in, notin, clamp(limit, 500))
@@ -97,7 +109,7 @@ func Diff(db *sql.DB, in, notin string, limit int) ([]Commit, error) {
 // Search finds commits by subject, author, or PR number.
 func Search(db *sql.DB, q string, limit int) ([]Commit, error) {
 	like := "%" + q + "%"
-	rows, err := db.Query(`SELECT sha, subject, pr_num, committed_at FROM commits
+	rows, err := db.Query(`SELECT sha, subject, pr_num, committed_at, `+unpushedCol(db, "")+` FROM commits
 		WHERE subject LIKE ?1 OR author_name LIKE ?1 OR CAST(pr_num AS TEXT)=?2
 		ORDER BY committed_at DESC LIMIT ?3`, like, q, clamp(limit, 100))
 	if err != nil {
@@ -194,12 +206,14 @@ func scanCommits(rows *sql.Rows) ([]Commit, error) {
 	for rows.Next() {
 		var c Commit
 		var pr sql.NullInt64
-		if err := rows.Scan(&c.SHA, &c.Subject, &pr, &c.CommittedAt); err != nil {
+		var unpushed int
+		if err := rows.Scan(&c.SHA, &c.Subject, &pr, &c.CommittedAt, &unpushed); err != nil {
 			return nil, err
 		}
 		if pr.Valid {
 			c.PRNum = itoa(pr.Int64)
 		}
+		c.Unpushed = unpushed != 0
 		out = append(out, c)
 	}
 	return out, rows.Err()
